@@ -228,6 +228,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"📖 {nn_data['narrative']}")
         await _do_turn(update, context, char, session,
                        nn_modifiers=nn_data.get("actions") if nn_data else None,
+                       enemy_nn_modifiers=nn_data.get("enemy_actions") if nn_data else None,
                        narrative=nn_data.get("narrative", "") if nn_data else "",
                        reply_to=update.message)
         return
@@ -595,7 +596,8 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                   char: Character, session: RaidSession, nn_modifiers, narrative: str = "",
+                   char: Character, session: RaidSession, nn_modifiers,
+                   enemy_nn_modifiers=None, narrative: str = "",
                    reply_to=None):
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
@@ -603,6 +605,7 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
     try:
         player_attack, enemy_attack, companion_attack, finished = process_encounter_turn(
             session, char, nn_modifiers=nn_modifiers,
+            enemy_nn_modifiers=enemy_nn_modifiers,
         )
     except Exception as e:
         log.exception("process_encounter_turn crashed")

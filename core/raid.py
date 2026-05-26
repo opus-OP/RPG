@@ -5,7 +5,7 @@ from typing import Optional
 
 from core.character import Character, Companion
 from core.locations import Location as LocationData, MobTemplate, MobAttack
-from core.combat import resolve_turn, AttackResult, StatusEffect, StatusEffectInstance
+from core.combat import resolve_turn, AttackResult, StatusEffect, StatusEffectInstance, apply_enemy_modifiers
 from core.items import Item
 from core.weapon_gen import generate_loot_weapons
 from utils.rng import secure_randint, roll_chance
@@ -132,6 +132,7 @@ def process_encounter_turn(
     session: RaidSession,
     character: Character,
     nn_modifiers: Optional[list[dict]] = None,
+    enemy_nn_modifiers: Optional[list[dict]] = None,
 ) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
     enc = session.encounters[session.current_encounter]
     enc.turn += 1
@@ -171,6 +172,17 @@ def process_encounter_turn(
     atk_min_saved, atk_max_saved = enemy.attack_min, enemy.attack_max
     atk_min_pick, atk_max_pick, _, atk_damage_type = enemy.pick_attack()
     enemy.attack_min, enemy.attack_max = atk_min_pick, atk_max_pick
+
+    if enemy_nn_modifiers:
+        from core.combat import BattleState
+        es = BattleState(
+            attacker=enemy, defender=character,
+            is_player_attacker=False, turn_number=enc.turn,
+            active_effects=enc.active_effects,
+        )
+        apply_enemy_modifiers(es, enemy_nn_modifiers)
+        enc.active_effects = es.active_effects
+
     enemy_attack, enc.active_effects = resolve_turn(
         attacker=enemy,
         defender=character,

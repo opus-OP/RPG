@@ -107,6 +107,34 @@ def apply_nn_modifiers(
             eff_list.append(StatusEffectInstance(StatusEffect.SHIELD, 1, float(shield_amount)))
 
 
+def apply_enemy_modifiers(
+    state: BattleState,
+    modifiers: list[dict],
+) -> None:
+    """Apply modifiers for enemy's turn (inverted perspective)."""
+    for mod in modifiers:
+        modifier = mod.get("modifier", "")
+        value = mod.get("value", 1.0)
+        target_key = "attacker" if mod.get("target") == "enemy" else "defender"
+        if modifier == "WEAK_SPOT_FOUND":
+            pass
+        elif modifier == "DODGE_BONUS":
+            eff_list = state.active_effects.setdefault(target_key, [])
+            duration = max(1, int(value * 3))
+            eff_list.append(StatusEffectInstance(StatusEffect.DODGE_BUFF, duration))
+        elif modifier == "STUN":
+            eff_key = "defender" if target_key == "attacker" else "attacker"
+            eff_list = state.active_effects.setdefault(eff_key, [])
+            eff_list.append(StatusEffectInstance(StatusEffect.STUNNED, 1))
+        elif modifier == "CRIT_BOOST":
+            eff_list = state.active_effects.setdefault(target_key, [])
+            eff_list.append(StatusEffectInstance(StatusEffect.CRIT_BOOST, 1))
+        elif modifier == "TAUNT":
+            eff_list = state.active_effects.setdefault(target_key, [])
+            shield_amount = int(value * 30)
+            eff_list.append(StatusEffectInstance(StatusEffect.SHIELD, 1, float(shield_amount)))
+
+
 def _apply_dot_damage(
     effects: list[StatusEffectInstance],
     target,

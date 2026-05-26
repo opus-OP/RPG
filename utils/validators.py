@@ -12,15 +12,16 @@ ALLOWED_MODIFIERS: dict[str, tuple[float, float]] = {
 RESERVED_ACTIONS = set(ALLOWED_MODIFIERS.keys())
 
 
-def validate_nn_response(data: dict) -> list[dict[str, Any]]:
+def validate_nn_response(data: dict, key: str = "actions", check_narrative: bool = True) -> list[dict[str, Any]]:
     if not isinstance(data, dict):
         raise ValueError("NN response must be a dict")
-    narrative = data.get("narrative", "")
-    if not isinstance(narrative, str) or not narrative.strip():
-        raise ValueError("NN response missing narrative")
-    actions = data.get("actions", [])
+    if check_narrative:
+        narrative = data.get("narrative", "")
+        if not isinstance(narrative, str) or not narrative.strip():
+            raise ValueError("NN response missing narrative")
+    actions = data.get(key, [])
     if not isinstance(actions, list):
-        raise ValueError("NN actions must be a list")
+        raise ValueError(f"NN {key} must be a list")
     validated = []
     for action in actions:
         if not isinstance(action, dict):

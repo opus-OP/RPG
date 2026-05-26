@@ -14,18 +14,20 @@ SYSTEM_PROMPT = (
     "Ты — нарратор RPG-боя. Описывай происходящее ярко, живо, на русском языке.\n\n"
     "Правила:\n"
     "1. Верни ТОЛЬКО JSON-объект, без лишнего текста.\n"
-    "2. Поле \"narrative\" (str): описание того, что произошло в этом ходу.\n"
-    "3. Поле \"actions\" (list): модификаторы, которые ты применяешь к бою. "
+    "2. Поле \"narrative\" (str): описание ВСЕГО хода — и действия игрока, и ответной атаки врага.\n"
+    "3. Поле \"actions\" (list): модификаторы для атаки игрока. "
+    "Можешь вернуть пустой список, если ничего не применяешь.\n"
+    "4. Поле \"enemy_actions\" (list): модификаторы для ответной атаки врага. "
     "Можешь вернуть пустой список, если ничего не применяешь.\n\n"
-    "Доступные модификаторы (actions):\n"
+    "Доступные модификаторы (actions / enemy_actions):\n"
 )
 
 MODIFIER_DESCRIPTIONS = {
-    "WEAK_SPOT_FOUND": '{"modifier": "WEAK_SPOT_FOUND", "value": 2.0, "target": "player"} — урон х 2 (value 1.2–2.0)',
+    "WEAK_SPOT_FOUND": '{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"} — урон х1.5 (value 1.2–2.0)',
     "DODGE_BONUS": '{"modifier": "DODGE_BONUS", "value": 0.15, "target": "player"} — уклонение +15% (value 0.0–0.3)',
     "STUN": '{"modifier": "STUN", "value": 1.0, "target": "enemy"} — враг пропускает ход',
     "CRIT_BOOST": '{"modifier": "CRIT_BOOST", "value": 1.0, "target": "player"} — гарантированный крит',
-    "TAUNT": '{"modifier": "TAUNT", "value": 0.5, "target": "player"} — щит 15 ед. (value × 30)',
+    "TAUNT": '{"modifier": "TAUNT", "value": 0.5, "target": "player"} — щит (value × 30 ед.)',
 }
 
 for line in MODIFIER_DESCRIPTIONS.values():
@@ -33,8 +35,10 @@ for line in MODIFIER_DESCRIPTIONS.values():
 
 SYSTEM_PROMPT += (
     "\nПример ответа:\n"
-    '{"narrative": "Вы замечаете брешь в защите врага и наносите точный удар!", '
-    '"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}]}'
+    '{"narrative": "Вы замечаете брешь в защите врага и наносите точный удар! '
+    'Враг в ярости отвечает мощным выпадом.", '
+    '"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}], '
+    '"enemy_actions": [{"modifier": "TAUNT", "value": 0.5, "target": "enemy"}]}'
 )
 
 
@@ -125,10 +129,13 @@ async def call_narrative_api(
                 continue
             data["narrative"] = parsed.get("narrative", "")
             data["actions"] = parsed.get("actions", [])
-            validated_actions = validate_nn_response(data)
+            data["enemy_actions"] = parsed.get("enemy_actions", [])
+            validated_actions = validate_nn_response(data, key="actions")
+            validated_enemy = validate_nn_response(data, key="enemy_actions", check_narrative=False)
             return {
                 "narrative": data["narrative"],
                 "actions": validated_actions,
+                "enemy_actions": validated_enemy,
             }
         except httpx.TimeoutException:
             log.warning("NN API timeout (attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
@@ -157,4 +164,5 @@ def fallback_response() -> dict[str, Any]:
     return {
         "narrative": "Бой продолжается. Звук стали и крики разносятся по полю.",
         "actions": [],
+        "enemy_actions": [],
     }
