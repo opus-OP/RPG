@@ -93,9 +93,9 @@ async def _reply(update: Update, text: str, **kwargs):
 
 
 
-# ─── /start ─────────────────────────────────────────────────
+# ─── /menu /start ──────────────────────────────────────────
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chars = await storage.load_characters(update.effective_user.id)
     if chars:
         await _reply(update, f"С возвращением, {chars[0].name}!", reply_markup=main_menu())
@@ -118,7 +118,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/market — рынок\n"
         "/raid — вернуться в рейд\n"
         "/characters — мои персонажи\n"
-        "/start — главное меню",
+        "/menu — главное меню",
     )
 
 # ─── /create — создание персонажа ───────────────────────────
@@ -1092,7 +1092,8 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ─── Регистрация ───────────────────────────────────────────
 
 def register_handlers(app: Application):
-    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("menu", cmd_menu))
+    app.add_handler(CommandHandler("start", cmd_menu))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("create", cmd_create))
     app.add_handler(CommandHandler("skip", cmd_skip))
