@@ -55,9 +55,17 @@ def _slot_item(char: Character, slot: str) -> str:
     return "пусто"
 
 
-async def _get_char(user_id: int) -> Optional[Character]:
+async def _get_char(user_id: int, context: ContextTypes.DEFAULT_TYPE | None = None) -> Optional[Character]:
     chars = await storage.load_characters(user_id)
-    return chars[0] if chars else None
+    if not chars:
+        return None
+    if context:
+        active_name = context.user_data.get("active_char")
+        if active_name:
+            for c in chars:
+                if c.name == active_name:
+                    return c
+    return chars[0]
 
 
 async def _save_char(char: Character):
@@ -65,7 +73,7 @@ async def _save_char(char: Character):
 
 
 async def _ensure_char(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[Character]:
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         await _reply(update, "У вас нет персонажа. Создайте: /create")
         return None
@@ -154,6 +162,7 @@ async def _finish_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, s
         companion_description=state.get("companion_description", ""),
     )
     await _save_char(char)
+    context.user_data["active_char"] = char.name
     context.user_data.pop("creation", None)
     await _reply(update,
         f"✅ Персонаж **{char.name}** ({CLASS_NAMES_RU[char.class_key]}) создан!",
@@ -309,7 +318,8 @@ async def cmd_characters(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not chars:
         await _reply(update, "Нет персонажей. /create")
         return
-    await _reply(update, "Ваши персонажи:", reply_markup=char_list(chars, chars[0].name))
+    current = context.user_data.get("active_char") or chars[0].name
+    await _reply(update, "Ваши персонажи:", reply_markup=char_list(chars, current))
 
 # ─── /location ──────────────────────────────────────────────
 
@@ -504,9 +514,22 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not loc:
         await query.edit_message_text("Локация не найдена.")
         return
-    char = await _get_char(uid)
-    if not char or char.in_raid:
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Персонаж не найден.")
         return
+    if char.in_raid:
+        session = context.user_data.get("raid")
+        if session and session.status == RaidStatus.IN_PROGRESS:
+            await query.edit_message_text("Вы уже в рейде! Завершите его.")
+            return
+        char.in_raid = False
+        char.release_companion()
+        await _save_char(char)
+        char = await _get_char(uid, context)
+        if not char:
+            await query.edit_message_text("Персонаж не найден.")
+            return
 
     raid_id = str(uuid.uuid4())[:8]
     session = create_raid(char, loc, raid_id)
@@ -516,6 +539,19 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["raid"] = session
 
     await _show_encounter(query, context, char, session)
+
+
+async def _show_encounter(query, context, char: Character, session: RaidSession):
+    enc = session.encounters[session.current_encounter]
+    context.user_data["raid_msg_chat"] = query.message.chat_id
+    context.user_data["raid_msg_id"] = query.message.message_id
+    total = len(session.encounters)
+    cur = session.current_encounter + 1
+    text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
+    if char.companion:
+        text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
+    await query.edit_message_text(text, reply_markup=raid_actions())
+
 
 async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -876,6 +912,7 @@ async def cb_char_switch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target:
         await query.edit_message_text("Персонаж не найден.")
         return
+    context.user_data["active_char"] = target.name
     await query.edit_message_text(f"✅ Переключено на **{target.name}**", reply_markup=main_menu())
 
 # ─── Админ-команды ─────────────────────────────────────────
