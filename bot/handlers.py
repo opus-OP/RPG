@@ -297,20 +297,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     session.status = RaidStatus.COMPLETED
                     loc = get_location(session.location_key)
                     if loc:
-                        loot = generate_loot(loc, len(session.encounters), char.level, [char.class_key])
-                        distribute_exp_gold(session, loc, [char])
-                        char.inventory.extend(loot)
-                        char.in_raid = False
-                        char.mark_raid_done()
-                        char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
-                        char.release_companion()
-                        char.hp = char.max_hp
-                        await _save_char(char)
-                        loot_text = ""
-                        if loot:
-                            loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
-                        player_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
                         _cleanup_raid(context)
+                        rewards = await _reward_all_participants(session, loc, context)
+                        my_reward = next((r for r in rewards if r[0] == char.name), None)
+                        loot_text = ""
+                        if my_reward:
+                            loot_text = "\n" + my_reward[1]
+                        player_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
                         await send_result(raid_done())
                     else:
                         player_text += "\n\n⚠️ Ошибка: локация не найдена."
@@ -363,7 +356,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ {item.name} выставлен на рынок за {price}💰")
         return
 
-    await update.message.reply_text("Неизвестная команда. /help")
+#    await update.message.reply_text("Неизвестная команда. /help")
 
 # ─── /profile ───────────────────────────────────────────────
 
@@ -853,6 +846,38 @@ def _cleanup_raid(context):
     context.user_data.pop("raid_action_pending", None)
 
 
+async def _reward_all_participants(session: RaidSession, location, context) -> list[tuple[str, str]]:
+    """Give loot/exp/gold to all raid participants. Returns [(char_name, loot_text), ...]."""
+    results = []
+    for uid_str in list(session.participant_names.keys()):
+        uid = int(uid_str)
+        chars = await storage.load_characters(uid)
+        if not chars:
+            continue
+        char = chars[0]
+        loot = generate_loot(location, len(session.encounters), char.level, [char.class_key])
+        distribute_exp_gold(session, location, [char])
+        char.inventory.extend(loot)
+        char.in_raid = False
+        char.mark_raid_done()
+        char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
+        char.release_companion()
+        char.hp = char.max_hp
+        await _save_char(char)
+        loot_text = ""
+        if loot:
+            loot_text = " 🎁 " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
+        results.append((char.name, loot_text))
+        try:
+            await context.bot.send_message(
+                uid, f"🏆 **Рейд пройден!**{loot_text}",
+                reply_markup=raid_done(),
+            )
+        except Exception:
+            pass
+    return results
+
+
 async def _save_session(context, session: RaidSession):
     """Save raid session to user_data or DB."""
     raid_id = context.user_data.get("raid_id")
@@ -957,18 +982,12 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loc = get_location(session.location_key)
         if loc:
             session.status = RaidStatus.COMPLETED
-            loot = generate_loot(loc, len(session.encounters), char.level, [char.class_key])
-            distribute_exp_gold(session, loc, [char])
-            char.inventory.extend(loot)
-            char.in_raid = False
-            char.mark_raid_done()
-            char.release_companion()
-            char.hp = char.max_hp
-            await _save_char(char)
-            text = "🏆 **Рейд пройден!**\n"
-            if loot:
-                text += "🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
             _cleanup_raid(context)
+            rewards = await _reward_all_participants(session, loc, context)
+            my_reward = next((r for r in rewards if r[0] == char.name), None)
+            text = "🏆 **Рейд пройден!**"
+            if my_reward:
+                text += my_reward[1]
             await query.edit_message_text(text, reply_markup=raid_done())
         else:
             await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
