@@ -101,13 +101,23 @@ def char_list(characters: list, current_name: str) -> InlineKeyboardMarkup:
     keyboard = []
     for c in characters:
         mark = "✅ " if c.name == current_name else ""
-        keyboard.append([InlineKeyboardButton(
-            f"{mark}{c.name} — {CLASS_NAMES_RU.get(c.class_key, c.class_key)}",
-            callback_data=f"char_switch_{c.name}",
-        )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{mark}{c.name} — {CLASS_NAMES_RU.get(c.class_key, c.class_key)}",
+                callback_data=f"char_switch_{c.name}",
+            ),
+            InlineKeyboardButton("❌", callback_data=f"char_del_{c.name}"),
+        ])
     keyboard.append([InlineKeyboardButton("➕ Создать", callback_data="char_create")])
     keyboard.append([InlineKeyboardButton("Назад", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
+
+
+def char_delete_confirm(name: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Подтвердить", callback_data=f"char_del_yes_{name}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="char_list")],
+    ])
 
 
 def market_listings(listings: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:

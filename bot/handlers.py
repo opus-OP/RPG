@@ -21,7 +21,7 @@ from bot.keyboards import (
     main_menu, class_selection, location_list, confirm_raid,
     raid_actions, raid_next, raid_done, raid_failed,
     inventory_pages, item_actions as item_actions_kb,
-    char_list, market_listings as market_listings_kb, market_confirm,
+    char_list, char_delete_confirm, market_listings as market_listings_kb, market_confirm,
 )
 
 log = logging.getLogger("rpg.handlers")
@@ -975,6 +975,38 @@ async def cb_char_switch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["active_char"] = target.name
     await query.edit_message_text(f"✅ Переключено на **{target.name}**", reply_markup=main_menu())
 
+
+async def cb_char_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    name = query.data[len("char_del_"):]
+    chars = await storage.load_characters(update.effective_user.id)
+    target = next((c for c in chars if c.name == name), None)
+    if not target:
+        await query.edit_message_text("Персонаж не найден.")
+        return
+    await query.edit_message_text(
+        f"🗑 Удалить **{target.name}** ({CLASS_NAMES_RU.get(target.class_key, target.class_key)})?\n\n"
+        "Все предметы, золото и прогресс исчезнут безвозвратно.",
+        reply_markup=char_delete_confirm(name),
+    )
+
+
+async def cb_char_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    name = query.data[len("char_del_yes_"):]
+    uid = update.effective_user.id
+    chars = await storage.load_characters(uid)
+    if len(chars) <= 1:
+        await query.edit_message_text("Нельзя удалить единственного персонажа. Сначала создайте нового.")
+        return
+    await storage.delete_character(uid, name)
+    if context.user_data.get("active_char") == name:
+        context.user_data.pop("active_char", None)
+    await query.edit_message_text(f"🗑 Персонаж **{name}** удалён.", reply_markup=main_menu())
+
+
 # ─── Админ-команды ─────────────────────────────────────────
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1142,5 +1174,7 @@ def register_handlers(app: Application):
 
     app.add_handler(CallbackQueryHandler(cb_char_create, pattern=r"^char_create$"))
     app.add_handler(CallbackQueryHandler(cb_char_switch, pattern=r"^char_switch_"))
+    app.add_handler(CallbackQueryHandler(cb_char_delete_confirm, pattern=r"^char_del_yes_"))
+    app.add_handler(CallbackQueryHandler(cb_char_delete, pattern=r"^char_del_"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
