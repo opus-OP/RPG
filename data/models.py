@@ -7,16 +7,58 @@ from core.items import Item, ItemTemplate, ItemEffect, Rarity, ItemType
 
 
 def item_to_dict(item: Item) -> dict:
-    return {
+    d = {
         "uid": item.uid,
         "template_name": item.template.name,
         "durability": item.durability,
         "durability_max": item.durability_max,
     }
+    td = item.template
+    d["template_data"] = {
+        "name": td.name,
+        "item_type": td.item_type.value,
+        "rarity": td.rarity.value,
+        "base_effect": {
+            "hp_bonus": td.base_effect.hp_bonus,
+            "atk_bonus": td.base_effect.atk_bonus,
+            "crit_chance_bonus": td.base_effect.crit_chance_bonus,
+            "crit_multiplier_bonus": td.base_effect.crit_multiplier_bonus,
+            "defense_bonus": td.base_effect.defense_bonus,
+            "dodge_bonus": td.base_effect.dodge_bonus,
+            "strength_bonus": td.base_effect.strength_bonus,
+            "agility_bonus": td.base_effect.agility_bonus,
+            "intelligence_bonus": td.base_effect.intelligence_bonus,
+        },
+        "required_level": td.required_level,
+        "required_class": td.required_class,
+        "durability_max": td.durability_max,
+    }
+    return d
 
 
 def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[Item]:
     tpl = templates.get(data.get("template_name", ""))
+    if not tpl and data.get("template_data"):
+        td = data["template_data"]
+        tpl = ItemTemplate(
+            name=td["name"],
+            item_type=ItemType(td["item_type"]),
+            rarity=Rarity(td["rarity"]),
+            base_effect=ItemEffect(
+                hp_bonus=td["base_effect"].get("hp_bonus", 0),
+                atk_bonus=td["base_effect"].get("atk_bonus", 0),
+                crit_chance_bonus=td["base_effect"].get("crit_chance_bonus", 0.0),
+                crit_multiplier_bonus=td["base_effect"].get("crit_multiplier_bonus", 0.0),
+                defense_bonus=td["base_effect"].get("defense_bonus", 0),
+                dodge_bonus=td["base_effect"].get("dodge_bonus", 0.0),
+                strength_bonus=td["base_effect"].get("strength_bonus", 0),
+                agility_bonus=td["base_effect"].get("agility_bonus", 0),
+                intelligence_bonus=td["base_effect"].get("intelligence_bonus", 0),
+            ),
+            required_level=td.get("required_level", 1),
+            required_class=td.get("required_class"),
+            durability_max=td.get("durability_max", 100),
+        )
     if not tpl:
         return None
     return Item(
