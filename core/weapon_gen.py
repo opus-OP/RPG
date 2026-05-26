@@ -98,15 +98,20 @@ def roll_weapon_from_pattern(
 
 
 def generate_loot_weapons(
-    character_level: int,
-    allowed_classes: list[str],
+    character_level: int = 0,
+    allowed_classes: list[str] | None = None,
     num_rolls: int = 1,
     min_rarity: str = "COMMON",
     max_rarity: str = "LEGENDARY",
+    min_level: int = 0,
+    max_level: int = 0,
 ) -> list[Item]:
+    if min_level <= 0 or max_level <= 0:
+        min_level = max(1, character_level + WEAPON_MIN_LEVEL_OFFSET)
+        max_level = character_level + WEAPON_MAX_LEVEL_OFFSET
     patterns = find_patterns(
-        min_level=max(1, character_level + WEAPON_MIN_LEVEL_OFFSET),
-        max_level=character_level + WEAPON_MAX_LEVEL_OFFSET,
+        min_level=min_level,
+        max_level=max_level,
         min_rarity=min_rarity,
         max_rarity=max_rarity,
         allowed_classes=allowed_classes,

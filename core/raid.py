@@ -218,6 +218,9 @@ def generate_loot(
     for r, w in location.drop_rates.rarity_weights.items():
         rarities.extend([r] * w)
 
+    weapon_min = max(1, location.recommended_level - 2)
+    weapon_max = location.recommended_level + 3
+
     for _ in range(enemies_defeated):
         if not roll_chance(location.drop_rates.weapon_chance):
             continue
@@ -228,6 +231,8 @@ def generate_loot(
             num_rolls=1,
             max_rarity=weapon_rarity,
             min_rarity=weapon_rarity,
+            min_level=weapon_min,
+            max_level=weapon_max,
         )
         for it in weapon_items:
             it.uid = f"loot_{uid_counter}"
