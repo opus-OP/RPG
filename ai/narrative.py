@@ -14,10 +14,12 @@ SYSTEM_PROMPT = (
     "Ты — нарратор RPG-боя. Описывай происходящее ярко, живо, на русском языке.\n\n"
     "Правила:\n"
     "1. Верни ТОЛЬКО JSON-объект, без лишнего текста.\n"
-    "2. Поле \"narrative\" (str): описание ВСЕГО хода — и действия игрока, и ответной атаки врага.\n"
-    "3. Поле \"actions\" (list): модификаторы для атаки игрока. "
+    "2. Поле \"player_narrative\" (str): описание действия игрока в этом ходу.\n"
+    "3. Поле \"enemy_narrative\" (str): описание ответного действия врага в этом ходу. "
+    "Если враг убит — опиши его гибель.\n"
+    "4. Поле \"actions\" (list): модификаторы для атаки игрока. "
     "Можешь вернуть пустой список, если ничего не применяешь.\n"
-    "4. Поле \"enemy_actions\" (list): модификаторы для ответной атаки врага. "
+    "5. Поле \"enemy_actions\" (list): модификаторы для ответной атаки врага. "
     "Можешь вернуть пустой список, если ничего не применяешь.\n\n"
     "Доступные модификаторы (actions / enemy_actions):\n"
 )
@@ -35,8 +37,8 @@ for line in MODIFIER_DESCRIPTIONS.values():
 
 SYSTEM_PROMPT += (
     "\nПример ответа:\n"
-    '{"narrative": "Вы замечаете брешь в защите врага и наносите точный удар! '
-    'Враг в ярости отвечает мощным выпадом.", '
+    '{"player_narrative": "Вы замечаете брешь в защите врага и наносите точный удар!", '
+    '"enemy_narrative": "Враг в ярости бросается на вас, целясь в горло.", '
     '"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}], '
     '"enemy_actions": [{"modifier": "TAUNT", "value": 0.5, "target": "enemy"}]}'
 )
@@ -127,13 +129,15 @@ async def call_narrative_api(
             if parsed is None:
                 log.warning("NN response not JSON (attempt %d/%d): %.200s", attempt, config.NN_MAX_RETRIES, content)
                 continue
-            data["narrative"] = parsed.get("narrative", "")
+            data["player_narrative"] = parsed.get("player_narrative", "")
+            data["enemy_narrative"] = parsed.get("enemy_narrative", "")
             data["actions"] = parsed.get("actions", [])
             data["enemy_actions"] = parsed.get("enemy_actions", [])
-            validated_actions = validate_nn_response(data, key="actions")
+            validated_actions = validate_nn_response(data, key="actions", check_narrative=False)
             validated_enemy = validate_nn_response(data, key="enemy_actions", check_narrative=False)
             return {
-                "narrative": data["narrative"],
+                "player_narrative": data["player_narrative"],
+                "enemy_narrative": data["enemy_narrative"],
                 "actions": validated_actions,
                 "enemy_actions": validated_enemy,
             }
@@ -162,7 +166,8 @@ def _extract_content(data: dict) -> Optional[str]:
 
 def fallback_response() -> dict[str, Any]:
     return {
-        "narrative": "Бой продолжается. Звук стали и крики разносятся по полю.",
+        "player_narrative": "Вы продолжаете атаку.",
+        "enemy_narrative": "Враг отвечает ударом.",
         "actions": [],
         "enemy_actions": [],
     }

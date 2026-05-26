@@ -224,11 +224,105 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             action_history=[],
             player_action=text,
         )
-        await _do_turn(update, context, char, session,
-                       nn_modifiers=nn_data.get("actions") if nn_data else None,
-                       enemy_nn_modifiers=nn_data.get("enemy_actions") if nn_data else None,
-                       narrative=nn_data.get("narrative", "") if nn_data else "",
-                       reply_to=update.message)
+        player_attack, enemy_attack, companion_attack, finished = await _do_turn(
+            update, context, char, session,
+            nn_modifiers=nn_data.get("actions") if nn_data else None,
+            enemy_nn_modifiers=nn_data.get("enemy_actions") if nn_data else None,
+            reply_to=update.message,
+        )
+        if player_attack is None:
+            return
+
+        total = len(session.encounters)
+        cur = session.current_encounter + 1
+
+        def line_enemy():
+            return _enemy_status_line(enc)
+
+        def line_player():
+            s = _char_status_line(char)
+            if char.companion and char.companion.alive:
+                s += f"\n🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}"
+            return s
+
+        player_narrative = (nn_data or {}).get("player_narrative", "")
+        enemy_narrative = (nn_data or {}).get("enemy_narrative", "")
+
+        async def send_result(kb):
+            msg = await update.message.reply_text(
+                f"⚔️ Рейд {cur}/{total}\n\n{line_enemy()}\n\n{line_player()}",
+                reply_markup=kb,
+            )
+            context.user_data["raid_msg_chat"] = msg.chat_id
+            context.user_data["raid_msg_id"] = msg.message_id
+            return msg
+
+        # ─── Player action message ───
+        player_text = f"⚔️ Рейд {cur}/{total}\n\n"
+        if player_narrative:
+            player_text += f"📖 {player_narrative}\n\n"
+        player_text += f"{line_enemy()}\n\n"
+        player_text += _attack_desc("Вы", player_attack) + "\n"
+        if companion_attack:
+            player_text += _attack_desc("🛡 Страж", companion_attack) + "\n"
+        player_text += f"\n{line_player()}"
+
+        # ─── Enemy action message / final ───
+        if finished:
+            if char.hp <= 0:
+                player_text += "\n\n💀 **Вы погибли!**"
+                session.status = RaidStatus.FAILED
+                char.in_raid = False
+                char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
+                char.release_companion()
+                char.alive = False
+                await _save_char(char)
+                context.user_data.pop("raid", None)
+                await send_result(raid_failed())
+            elif enc.enemy_hp <= 0:
+                enc.finished = True
+                player_text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
+                if session.current_encounter + 1 >= len(session.encounters):
+                    session.status = RaidStatus.COMPLETED
+                    loc = get_location(session.location_key)
+                    if loc:
+                        loot = generate_loot(loc, len(session.encounters), char.level, [char.class_key])
+                        distribute_exp_gold(session, loc, [char])
+                        char.inventory.extend(loot)
+                        char.in_raid = False
+                        char.mark_raid_done()
+                        char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
+                        char.release_companion()
+                        await _save_char(char)
+                        loot_text = ""
+                        if loot:
+                            loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
+                        player_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
+                        context.user_data.pop("raid", None)
+                        await send_result(raid_done())
+                    else:
+                        player_text += "\n\n⚠️ Ошибка: локация не найдена."
+                        await send_result(main_menu())
+                else:
+                    await _save_char(char)
+                    await send_result(raid_next())
+            else:
+                await _save_char(char)
+                await send_result(raid_actions())
+        else:
+            # Enemy alive — send player msg, then enemy msg
+            player_text += "\n\n⏳ Ожидание ответа врага..."
+            player_msg = await update.message.reply_text(player_text)
+            enemy_text = f"⚔️ Рейд {cur}/{total}\n\n"
+            if enemy_narrative:
+                enemy_text += f"📖 {enemy_narrative}\n\n"
+            enemy_text += f"{line_enemy()}\n\n"
+            enemy_text += _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит") + "\n"
+            enemy_text += f"\n{line_player()}"
+            await _save_char(char)
+            msg = await player_msg.reply_text(enemy_text, reply_markup=raid_actions())
+            context.user_data["raid_msg_chat"] = msg.chat_id
+            context.user_data["raid_msg_id"] = msg.message_id
         return
 
     sell = context.user_data.get("sell")
@@ -595,8 +689,7 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
                    char: Character, session: RaidSession, nn_modifiers,
-                   enemy_nn_modifiers=None, narrative: str = "",
-                   reply_to=None):
+                   enemy_nn_modifiers=None, reply_to=None):
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
 
@@ -609,85 +702,9 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
         log.exception("process_encounter_turn crashed")
         if reply_to:
             await reply_to.reply_text(f"❌ Ошибка боя: {e}")
-        return
+        return None, None, None, None
 
-    total = len(session.encounters)
-    cur = session.current_encounter + 1
-    text = f"⚔️ Рейд {cur}/{total}\n\n"
-    if narrative:
-        text += f"📖 {narrative}\n\n"
-    text += _enemy_status_line(enc) + "\n\n"
-    text += _attack_desc("Вы", player_attack) + "\n"
-    if companion_attack:
-        text += _attack_desc("🛡 Страж", companion_attack) + "\n"
-    if enemy_attack:
-        text += _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит") + "\n"
-    text += f"\n{_char_status_line(char)}"
-    if char.companion and char.companion.alive:
-        text += f"\n🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}"
-
-    if finished:
-        if char.hp <= 0:
-            text += "\n\n💀 **Вы погибли!**"
-            session.status = RaidStatus.FAILED
-            char.in_raid = False
-            char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
-            char.release_companion()
-            char.alive = False
-            await _save_char(char)
-            context.user_data.pop("raid", None)
-            await _edit_turn_msg(context, text, raid_failed(), reply_to)
-        elif enc.enemy_hp <= 0:
-            text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
-            enc.finished = True
-            if session.current_encounter + 1 >= len(session.encounters):
-                session.status = RaidStatus.COMPLETED
-                loc = get_location(session.location_key)
-                if loc:
-                    loot = generate_loot(loc, len(session.encounters), char.level, [char.class_key])
-                    distribute_exp_gold(session, loc, [char])
-                    char.inventory.extend(loot)
-                    char.in_raid = False
-                    char.mark_raid_done()
-                    char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
-                    char.release_companion()
-                    await _save_char(char)
-                    loot_text = ""
-                    if loot:
-                        loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
-                    text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
-                    context.user_data.pop("raid", None)
-                    await _edit_turn_msg(context, text, raid_done(), reply_to)
-                else:
-                    text += "\n\n⚠️ Ошибка: локация не найдена."
-                    await _edit_turn_msg(context, text, main_menu(), reply_to)
-            else:
-                await _save_char(char)
-                await _edit_turn_msg(context, text, raid_next(), reply_to)
-        else:
-            await _save_char(char)
-            await _edit_turn_msg(context, text, raid_actions(), reply_to)
-    else:
-        await _save_char(char)
-        await _edit_turn_msg(context, text, raid_actions(), reply_to)
-
-
-async def _edit_turn_msg(context, text: str, kb, reply_to=None):
-    chat_id = context.user_data.get("raid_msg_chat")
-    msg_id = context.user_data.get("raid_msg_id")
-    if chat_id and msg_id:
-        try:
-            await context.bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=kb)
-            return
-        except Exception as e:
-            log.warning("_edit_turn_msg edit failed: %s", e)
-    if reply_to:
-        try:
-            msg = await reply_to.reply_text(text, reply_markup=kb)
-            context.user_data["raid_msg_chat"] = msg.chat_id
-            context.user_data["raid_msg_id"] = msg.message_id
-        except Exception as e:
-            log.warning("_edit_turn_msg reply failed: %s", e)
+    return player_attack, enemy_attack, companion_attack, finished
 
 # ─── Callback: рейд — следующий враг ───────────────────────
 
