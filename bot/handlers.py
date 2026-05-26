@@ -1026,11 +1026,30 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          "/reset_cooldown — сбросить таймер рейда")
 
 
+async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
+    uid = update.effective_user.id
+    if args and args[0].startswith("@"):
+        username = args[0].lstrip("@")
+        try:
+            chat = await context.bot.get_chat(f"@{username}")
+            target_uid = chat.id
+        except Exception:
+            await _reply(update, f"Пользователь @{username} не найден.")
+            return None
+        chars = await storage.load_characters(target_uid)
+        if not chars:
+            await _reply(update, f"У @{username} нет персонажа.")
+            return None
+        return chars[0]
+    return await _get_char(uid, context)
+
+
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("admin"):
         await _reply(update, "Доступ запрещён.")
         return
-    char = await _get_char(update.effective_user.id, context)
+    args = context.args
+    char = await _resolve_target_char(update, context, args)
     if not char:
         return
     await _reply(update,
@@ -1051,21 +1070,22 @@ async def cmd_set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/set_level <число>")
+        await _reply(update, "/set_level <число> [@тег]")
         return
     try:
-        lvl = int(args[0])
-    except ValueError:
-        await _reply(update, "Введите число.")
+        lvl_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
+        lvl = int(lvl_str)
+    except (ValueError, IndexError):
+        await _reply(update, "/set_level <число> [@тег]")
         return
-    char = await _get_char(update.effective_user.id, context)
+    char = await _resolve_target_char(update, context, args)
     if not char:
         return
     char.level = max(1, min(lvl, 50))
     char._recalc_stats()
     char.hp = char.max_hp
     await _save_char(char)
-    await _reply(update, f"✅ Уровень {char.level}, HP восстановлено.")
+    await _reply(update, f"✅ {char.name}: уровень {char.level}, HP восстановлено.")
 
 
 async def cmd_add_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1074,19 +1094,20 @@ async def cmd_add_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/add_gold <число>")
+        await _reply(update, "/add_gold <число> [@тег]")
         return
     try:
-        amount = int(args[0])
-    except ValueError:
-        await _reply(update, "Введите число.")
+        amt_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
+        amount = int(amt_str)
+    except (ValueError, IndexError):
+        await _reply(update, "/add_gold <число> [@тег]")
         return
-    char = await _get_char(update.effective_user.id, context)
+    char = await _resolve_target_char(update, context, args)
     if not char:
         return
     char.gold += amount
     await _save_char(char)
-    await _reply(update, f"✅ +{amount}💰, теперь {char.gold}💰")
+    await _reply(update, f"✅ {char.name}: +{amount}💰, теперь {char.gold}💰")
 
 
 async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1095,31 +1116,33 @@ async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/add_exp <число>")
+        await _reply(update, "/add_exp <число> [@тег]")
         return
     try:
-        amount = int(args[0])
-    except ValueError:
-        await _reply(update, "Введите число.")
+        amt_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
+        amount = int(amt_str)
+    except (ValueError, IndexError):
+        await _reply(update, "/add_exp <число> [@тег]")
         return
-    char = await _get_char(update.effective_user.id, context)
+    char = await _resolve_target_char(update, context, args)
     if not char:
         return
     char.add_experience(amount)
     await _save_char(char)
-    await _reply(update, f"✅ +{amount} XP, уровень {char.level}")
+    await _reply(update, f"✅ {char.name}: +{amount} XP, уровень {char.level}")
 
 
 async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("admin"):
         await _reply(update, "Доступ запрещён.")
         return
-    char = await _get_char(update.effective_user.id, context)
+    args = context.args
+    char = await _resolve_target_char(update, context, args)
     if not char:
         return
     char.last_raid_time = 0.0
     await _save_char(char)
-    await _reply(update, "✅ Кулдаун рейда сброшен.")
+    await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
 
 # ─── Регистрация ───────────────────────────────────────────
 
