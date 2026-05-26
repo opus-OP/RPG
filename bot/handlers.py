@@ -212,7 +212,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("raid_action_pending", None)
             await update.message.reply_text("Рейд уже завершён.")
             return
-        char = await _get_char(uid)
+        char = await _get_char(uid, context)
         if not char:
             context.user_data.pop("raid_action_pending", None)
             return
@@ -230,7 +230,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"📖 {nn_data['narrative']}")
         await _do_turn(update, context, char, session,
                        nn_modifiers=nn_data.get("actions") if nn_data else None,
-                       narrative=nn_data.get("narrative", "") if nn_data else "")
+                       narrative=nn_data.get("narrative", "") if nn_data else "",
+                       reply_to=update.message)
         return
 
     sell = context.user_data.get("sell")
@@ -586,7 +587,8 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                   char: Character, session: RaidSession, nn_modifiers, narrative: str = ""):
+                   char: Character, session: RaidSession, nn_modifiers, narrative: str = "",
+                   reply_to=None):
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
 
@@ -616,7 +618,7 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
             char.alive = False
             await _save_char(char)
             context.user_data.pop("raid", None)
-            await _edit_turn_msg(context, text, raid_failed())
+            await _edit_turn_msg(context, text, raid_failed(), reply_to)
         elif enc.enemy_hp <= 0:
             text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
             enc.finished = True
@@ -636,26 +638,34 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
                     text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
                     context.user_data.pop("raid", None)
-                    await _edit_turn_msg(context, text, raid_done())
+                    await _edit_turn_msg(context, text, raid_done(), reply_to)
                 else:
                     text += "\n\n⚠️ Ошибка: локация не найдена."
-                    await _edit_turn_msg(context, text, main_menu())
+                    await _edit_turn_msg(context, text, main_menu(), reply_to)
             else:
-                await _edit_turn_msg(context, text, raid_next())
+                await _edit_turn_msg(context, text, raid_next(), reply_to)
         else:
-            await _edit_turn_msg(context, text, raid_actions())
+            await _edit_turn_msg(context, text, raid_actions(), reply_to)
     else:
-        await _edit_turn_msg(context, text, raid_actions())
+        await _edit_turn_msg(context, text, raid_actions(), reply_to)
 
 
-async def _edit_turn_msg(context, text: str, kb):
+async def _edit_turn_msg(context, text: str, kb, reply_to=None):
     chat_id = context.user_data.get("raid_msg_chat")
     msg_id = context.user_data.get("raid_msg_id")
     if chat_id and msg_id:
         try:
             await context.bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=kb)
-        except Exception:
-            pass
+            return
+        except Exception as e:
+            log.warning("_edit_turn_msg edit failed: %s", e)
+    if reply_to:
+        try:
+            msg = await reply_to.reply_text(text, reply_markup=kb)
+            context.user_data["raid_msg_chat"] = msg.chat_id
+            context.user_data["raid_msg_id"] = msg.message_id
+        except Exception as e:
+            log.warning("_edit_turn_msg reply failed: %s", e)
 
 # ─── Callback: рейд — следующий враг ───────────────────────
 
