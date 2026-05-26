@@ -1,0 +1,110 @@
+{
+  "$schema": "Локации. mobs — список ID мобов из mobs.json. drop_rates — шансы выпадения оружия по редкости.",
+  "locations": {
+    "forest": {
+      "name": "Тёмный лес",
+      "description": "Густой лес, где водятся гоблины и волки. Подходит для начинащих.",
+      "recommended_level": 1,
+      "danger": 2,
+      "min_enemies": 2,
+      "max_enemies": 4,
+      "mobs": ["goblin", "wolf", "zombie_lumber"],
+      "gold_min": 5,
+      "gold_max": 20,
+      "exp_reward": 50,
+      "drop_rates": {
+        "weapon_chance": 0.4,
+        "rarity_weights": {
+          "COMMON": 80,
+          "RARE": 15,
+          "EPIC": 4,
+          "LEGENDARY": 1
+        }
+      }
+    },
+    "caves": {
+      "name": "Каменные пещеры",
+      "description": "Система тёмных пещер с троллями и големами. Требуется экипировка.",
+      "recommended_level": 5,
+      "danger": 5,
+      "min_enemies": 2,
+      "max_enemies": 5,
+      "mobs": ["troll_cave", "ratman", "crystal_golem"],
+      "gold_min": 15,
+      "gold_max": 50,
+      "exp_reward": 120,
+      "drop_rates": {
+        "weapon_chance": 0.45,
+        "rarity_weights": {
+          "COMMON": 50,
+          "RARE": 30,
+          "EPIC": 15,
+          "LEGENDARY": 5
+        }
+      }
+    },
+    "dungeon": {
+      "name": "Забытое подземелье",
+      "description": "Древние руины, полные нежити и тёмной магии. Опасно!",
+      "recommended_level": 10,
+      "danger": 8,
+      "min_enemies": 3,
+      "max_enemies": 6,
+      "mobs": ["skeleton_knight", "dark_elf", "necromancer"],
+      "gold_min": 30,
+      "gold_max": 100,
+      "exp_reward": 250,
+      "drop_rates": {
+        "weapon_chance": 0.5,
+        "rarity_weights": {
+          "COMMON": 20,
+          "RARE": 35,
+          "EPIC": 30,
+          "LEGENDARY": 15
+        }
+      }
+    },
+    "volcano": {
+      "name": "Вулканические недра",
+      "description": "Раскалённые туннели внутри вулкана. Воздух плавит лёгкие.",
+      "recommended_level": 15,
+      "danger": 9,
+      "min_enemies": 3,
+      "max_enemies": 5,
+      "mobs": ["fire_elemental", "demon", "dragon_whelp"],
+      "gold_min": 50,
+      "gold_max": 150,
+      "exp_reward": 400,
+      "drop_rates": {
+        "weapon_chance": 0.55,
+        "rarity_weights": {
+          "COMMON": 5,
+          "RARE": 25,
+          "EPIC": 40,
+          "LEGENDARY": 30
+        }
+      }
+    },
+    "frost_tomb": {
+      "name": "Ледяная гробница",
+      "description": "Древняя усыпальница, где вечная мерзлота хранит зло.",
+      "recommended_level": 12,
+      "danger": 8,
+      "min_enemies": 3,
+      "max_enemies": 6,
+      "mobs": ["skeleton_knight", "ice_wraith", "vampire", "lich"],
+      "gold_min": 40,
+      "gold_max": 120,
+      "exp_reward": 350,
+      "drop_rates": {
+        "weapon_chance": 0.5,
+        "rarity_weights": {
+          "COMMON": 10,
+          "RARE": 30,
+          "EPIC": 35,
+          "LEGENDARY": 25
+        }
+      }
+    }
+  }
+}

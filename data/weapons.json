@@ -1,0 +1,1114 @@
+{
+  "$schema": "Описание: паттерны оружия для генерации лута. NN получает готовые статы и генерирует название + описание под локацию/моба.",
+  "attribute_descriptions": {
+    "one_handed": "Одноручное — можно использовать со щитом или вторым оружием",
+    "two_handed": "Двуручное — повышенный урон, занимает обе руки",
+    "dual_wield": "Парное — только для Плута, даёт бонус к скорости атаки",
+    "ranged": "Дальний бой — атака без ответа, если враг не имеет дальнего оружия",
+    "melee": "Ближний бой",
+    "polearm": "Древковое — повышенная защита в первых ходах",
+    "scaling_strength": "Урон зависит от Силы",
+    "scaling_agility": "Урон зависит от Ловкости",
+    "scaling_intelligence": "Урон зависит от Интеллекта",
+    "fire": "Огненный урон — дополнительный эффект горения (2 урона/ход, 3 хода)",
+    "ice": "Ледяной урон — замедление врага (-10% к скорости атаки)",
+    "poison": "Ядовитый урон — отравление (3 урона/ход, 2 хода)",
+    "lightning": "Молниеносный урон — шанс оглушить врага на 1 ход",
+    "holy": "Святой урон — дополнительный урон по нежити (+50%)",
+    "bleed": "Кровотечение (4 урона/ход, 2 хода)",
+    "vampiric": "Вампиризм — 10% урона восстанавливает HP",
+    "fast": "Быстрое оружие — двойная атака каждый 3-й ход",
+    "heavy": "Тяжёлое оружие — шанс оглушить врага",
+    "versatile": "Универсальное — можно использовать одной или двумя руками"
+  },
+  "weapon_patterns": [
+    {
+      "id": "dagger_iron",
+      "base_names": [
+        "Кинжал",
+        "Нож",
+        "Стилет"
+      ],
+      "adjectives": [
+        "Железный",
+        "Простой",
+        "Ржавый",
+        "Старый"
+      ],
+      "damage_min": 2,
+      "damage_max": 5,
+      "crit_bonus": 0.05,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior",
+        "rogue",
+        "mage",
+        "leader"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fast",
+        "scaling_agility"
+      ],
+      "durability_min": 40,
+      "durability_max": 70,
+      "required_level": 1,
+      "materials": [
+        "iron"
+      ],
+      "weight": 30.0
+    },
+    {
+      "id": "sword_iron",
+      "base_names": [
+        "Меч",
+        "Короткий меч"
+      ],
+      "adjectives": [
+        "Стальной",
+        "Железный",
+        "Кованый"
+      ],
+      "damage_min": 4,
+      "damage_max": 8,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "scaling_strength"
+      ],
+      "durability_min": 60,
+      "durability_max": 100,
+      "required_level": 1,
+      "materials": [
+        "iron",
+        "steel"
+      ],
+      "weight": 40.0
+    },
+    {
+      "id": "axe_iron",
+      "base_names": [
+        "Топор",
+        "Секира"
+      ],
+      "adjectives": [
+        "Боевой",
+        "Железный",
+        "Тяжёлый"
+      ],
+      "damage_min": 5,
+      "damage_max": 10,
+      "crit_bonus": 0.02,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "heavy",
+        "scaling_strength"
+      ],
+      "durability_min": 70,
+      "durability_max": 110,
+      "required_level": 1,
+      "materials": [
+        "iron",
+        "steel"
+      ],
+      "weight": 45.0
+    },
+    {
+      "id": "greatsword_iron",
+      "base_names": [
+        "Двуручный меч",
+        "Большой меч"
+      ],
+      "adjectives": [
+        "Тяжёлый",
+        "Стальной",
+        "Грозный"
+      ],
+      "damage_min": 8,
+      "damage_max": 16,
+      "crit_bonus": 0.03,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "heavy",
+        "scaling_strength"
+      ],
+      "durability_min": 80,
+      "durability_max": 130,
+      "required_level": 3,
+      "materials": [
+        "steel"
+      ],
+      "weight": 55.0
+    },
+    {
+      "id": "greataxe_iron",
+      "base_names": [
+        "Двуручный топор",
+        "Секира"
+      ],
+      "adjectives": [
+        "Тяжёлая",
+        "Гигантская",
+        "Разрубающая"
+      ],
+      "damage_min": 10,
+      "damage_max": 20,
+      "crit_bonus": 0.02,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "heavy",
+        "bleed",
+        "scaling_strength"
+      ],
+      "durability_min": 90,
+      "durability_max": 140,
+      "required_level": 5,
+      "materials": [
+        "steel"
+      ],
+      "weight": 60.0
+    },
+    {
+      "id": "spear_iron",
+      "base_names": [
+        "Копьё",
+        "Пика"
+      ],
+      "adjectives": [
+        "Длинное",
+        "Стальное",
+        "Острое"
+      ],
+      "damage_min": 5,
+      "damage_max": 12,
+      "dodge_bonus": 0.03,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "polearm",
+        "versatile",
+        "scaling_strength"
+      ],
+      "durability_min": 60,
+      "durability_max": 100,
+      "required_level": 2,
+      "materials": [
+        "iron",
+        "steel"
+      ],
+      "weight": 40.0
+    },
+    {
+      "id": "bow_short",
+      "base_names": [
+        "Короткий лук",
+        "Лук"
+      ],
+      "adjectives": [
+        "Деревянный",
+        "Охотничий",
+        "Простой"
+      ],
+      "damage_min": 3,
+      "damage_max": 7,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "rogue",
+        "warrior"
+      ],
+      "attributes": [
+        "ranged",
+        "two_handed",
+        "scaling_agility"
+      ],
+      "durability_min": 40,
+      "durability_max": 70,
+      "required_level": 1,
+      "materials": [
+        "wood"
+      ],
+      "weight": 25.0
+    },
+    {
+      "id": "bow_long",
+      "base_names": [
+        "Длинный лук",
+        "Большой лук"
+      ],
+      "adjectives": [
+        "Тисовый",
+        "Усиленный",
+        "Дальнобойный"
+      ],
+      "damage_min": 6,
+      "damage_max": 14,
+      "crit_bonus": 0.04,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "ranged",
+        "two_handed",
+        "scaling_agility"
+      ],
+      "durability_min": 50,
+      "durability_max": 80,
+      "required_level": 4,
+      "materials": [
+        "wood",
+        "composite"
+      ],
+      "weight": 30.0
+    },
+    {
+      "id": "crossbow",
+      "base_names": [
+        "Арбалет",
+        "Самострел"
+      ],
+      "adjectives": [
+        "Лёгкий",
+        "Тяжёлый",
+        "Снайперский"
+      ],
+      "damage_min": 8,
+      "damage_max": 18,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "ranged",
+        "two_handed",
+        "heavy",
+        "scaling_strength"
+      ],
+      "durability_min": 60,
+      "durability_max": 100,
+      "required_level": 4,
+      "materials": [
+        "steel",
+        "composite"
+      ],
+      "weight": 45.0
+    },
+    {
+      "id": "wand_wood",
+      "base_names": [
+        "Жезл",
+        "Палочка"
+      ],
+      "adjectives": [
+        "Дубовый",
+        "Магический",
+        "Светящийся"
+      ],
+      "damage_min": 3,
+      "damage_max": 6,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "mage",
+        "leader"
+      ],
+      "attributes": [
+        "one_handed",
+        "ranged",
+        "scaling_intelligence",
+        "fast"
+      ],
+      "durability_min": 30,
+      "durability_max": 50,
+      "required_level": 1,
+      "materials": [
+        "wood",
+        "crystal"
+      ],
+      "weight": 10.0
+    },
+    {
+      "id": "staff_wood",
+      "base_names": [
+        "Посох",
+        "Магический посох"
+      ],
+      "adjectives": [
+        "Дубовый",
+        "Древний",
+        "Сияющий"
+      ],
+      "damage_min": 5,
+      "damage_max": 12,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "mage",
+        "leader"
+      ],
+      "attributes": [
+        "two_handed",
+        "ranged",
+        "scaling_intelligence"
+      ],
+      "durability_min": 40,
+      "durability_max": 70,
+      "required_level": 1,
+      "materials": [
+        "wood",
+        "crystal"
+      ],
+      "weight": 20.0
+    },
+    {
+      "id": "dagger_silver",
+      "base_names": [
+        "Кинжал",
+        "Стилет"
+      ],
+      "adjectives": [
+        "Серебряный",
+        "Острый",
+        "Изящный"
+      ],
+      "damage_min": 4,
+      "damage_max": 9,
+      "crit_bonus": 0.07,
+      "dodge_bonus": 0.02,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "rogue",
+        "mage",
+        "leader"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fast",
+        "scaling_agility",
+        "holy"
+      ],
+      "durability_min": 50,
+      "durability_max": 80,
+      "required_level": 3,
+      "materials": [
+        "silver"
+      ],
+      "weight": 15.0
+    },
+    {
+      "id": "sword_flame",
+      "base_names": [
+        "Меч",
+        "Клинок"
+      ],
+      "adjectives": [
+        "Пылающий",
+        "Огненный",
+        "Пламенный"
+      ],
+      "damage_min": 8,
+      "damage_max": 16,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fire",
+        "scaling_strength"
+      ],
+      "durability_min": 90,
+      "durability_max": 130,
+      "required_level": 8,
+      "materials": [
+        "steel",
+        "magic"
+      ],
+      "weight": 40.0
+    },
+    {
+      "id": "staff_fire",
+      "base_names": [
+        "Посох",
+        "Жезл"
+      ],
+      "adjectives": [
+        "Пылающий",
+        "Огненный",
+        "Вулканический"
+      ],
+      "damage_min": 10,
+      "damage_max": 20,
+      "crit_bonus": 0.05,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "mage"
+      ],
+      "attributes": [
+        "two_handed",
+        "ranged",
+        "fire",
+        "scaling_intelligence"
+      ],
+      "durability_min": 70,
+      "durability_max": 110,
+      "required_level": 8,
+      "materials": [
+        "magic",
+        "crystal"
+      ],
+      "weight": 25.0
+    },
+    {
+      "id": "bow_ice",
+      "base_names": [
+        "Лук",
+        "Большой лук"
+      ],
+      "adjectives": [
+        "Ледяной",
+        "Хладный",
+        "Застывший"
+      ],
+      "damage_min": 8,
+      "damage_max": 16,
+      "crit_bonus": 0.06,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "ranged",
+        "two_handed",
+        "ice",
+        "scaling_agility"
+      ],
+      "durability_min": 60,
+      "durability_max": 90,
+      "required_level": 8,
+      "materials": [
+        "magic",
+        "composite"
+      ],
+      "weight": 30.0
+    },
+    {
+      "id": "dagger_poison",
+      "base_names": [
+        "Кинжал",
+        "Стилет",
+        "Нож"
+      ],
+      "adjectives": [
+        "Отравленный",
+        "Ядовитый",
+        "Тёмный"
+      ],
+      "damage_min": 5,
+      "damage_max": 10,
+      "crit_bonus": 0.08,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fast",
+        "poison",
+        "scaling_agility"
+      ],
+      "durability_min": 40,
+      "durability_max": 70,
+      "required_level": 4,
+      "materials": [
+        "steel",
+        "magic"
+      ],
+      "weight": 12.0
+    },
+    {
+      "id": "axe_vampiric",
+      "base_names": [
+        "Секира",
+        "Топор"
+      ],
+      "adjectives": [
+        "Вампирический",
+        "Кровавый",
+        "Жаждущий"
+      ],
+      "damage_min": 10,
+      "damage_max": 20,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "heavy",
+        "vampiric",
+        "scaling_strength"
+      ],
+      "durability_min": 80,
+      "durability_max": 120,
+      "required_level": 10,
+      "materials": [
+        "magic",
+        "steel"
+      ],
+      "weight": 50.0
+    },
+    {
+      "id": "mace_heavy",
+      "base_names": [
+        "Булава",
+        "Молот",
+        "Дубина"
+      ],
+      "adjectives": [
+        "Шипастая",
+        "Тяжёлая",
+        "Дробящая"
+      ],
+      "damage_min": 6,
+      "damage_max": 14,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior",
+        "leader"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "heavy",
+        "scaling_strength"
+      ],
+      "durability_min": 80,
+      "durability_max": 130,
+      "required_level": 2,
+      "materials": [
+        "iron",
+        "steel"
+      ],
+      "weight": 50.0
+    },
+    {
+      "id": "hammer_great",
+      "base_names": [
+        "Молот",
+        "Кувалда"
+      ],
+      "adjectives": [
+        "Гигантский",
+        "Дробящий",
+        "Громовой"
+      ],
+      "damage_min": 14,
+      "damage_max": 26,
+      "crit_bonus": 0.02,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "heavy",
+        "lightning",
+        "scaling_strength"
+      ],
+      "durability_min": 100,
+      "durability_max": 160,
+      "required_level": 7,
+      "materials": [
+        "steel",
+        "magic"
+      ],
+      "weight": 70.0
+    },
+    {
+      "id": "dualdaggers_shadow",
+      "base_names": [
+        "Парные кинжалы",
+        "Теневые клинки"
+      ],
+      "adjectives": [
+        "Теневой",
+        "Призрачный",
+        "Тёмный"
+      ],
+      "damage_min": 4,
+      "damage_max": 8,
+      "crit_bonus": 0.1,
+      "dodge_bonus": 0.03,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "dual_wield",
+        "melee",
+        "fast",
+        "poison",
+        "scaling_agility"
+      ],
+      "durability_min": 50,
+      "durability_max": 80,
+      "required_level": 6,
+      "materials": [
+        "magic",
+        "silver"
+      ],
+      "weight": 18.0
+    },
+    {
+      "id": "staff_lightning",
+      "base_names": [
+        "Посох",
+        "Жезл",
+        "Скипетр"
+      ],
+      "adjectives": [
+        "Грозовой",
+        "Молниеносный",
+        "Электрический"
+      ],
+      "damage_min": 12,
+      "damage_max": 22,
+      "crit_bonus": 0.04,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "mage"
+      ],
+      "attributes": [
+        "two_handed",
+        "ranged",
+        "lightning",
+        "scaling_intelligence"
+      ],
+      "durability_min": 60,
+      "durability_max": 100,
+      "required_level": 9,
+      "materials": [
+        "magic",
+        "crystal"
+      ],
+      "weight": 22.0
+    },
+    {
+      "id": "mace_holy",
+      "base_names": [
+        "Булава",
+        "Молот",
+        "Цеп"
+      ],
+      "adjectives": [
+        "Святой",
+        "Благословенный",
+        "Очищающий"
+      ],
+      "damage_min": 6,
+      "damage_max": 14,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "leader",
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "holy",
+        "scaling_intelligence",
+        "scaling_strength"
+      ],
+      "durability_min": 70,
+      "durability_max": 110,
+      "required_level": 5,
+      "materials": [
+        "silver",
+        "magic"
+      ],
+      "weight": 35.0
+    },
+    {
+      "id": "spear_lightning",
+      "base_names": [
+        "Копьё",
+        "Пика",
+        "Гарпун"
+      ],
+      "adjectives": [
+        "Громовое",
+        "Молниеносное",
+        "Электрическое"
+      ],
+      "damage_min": 8,
+      "damage_max": 18,
+      "dodge_bonus": 0.04,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "polearm",
+        "lightning",
+        "scaling_agility",
+        "scaling_strength"
+      ],
+      "durability_min": 70,
+      "durability_max": 110,
+      "required_level": 8,
+      "materials": [
+        "magic",
+        "steel"
+      ],
+      "weight": 40.0
+    },
+    {
+      "id": "staff_healing",
+      "base_names": [
+        "Посох",
+        "Жезл"
+      ],
+      "adjectives": [
+        "Светлый",
+        "Целебный",
+        "Животворящий"
+      ],
+      "damage_min": 3,
+      "damage_max": 7,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "leader",
+        "mage"
+      ],
+      "attributes": [
+        "two_handed",
+        "ranged",
+        "holy",
+        "scaling_intelligence"
+      ],
+      "special_effect": "При каждом ударе восстанавливает 3 HP союзнику",
+      "durability_min": 50,
+      "durability_max": 80,
+      "required_level": 4,
+      "materials": [
+        "magic",
+        "wood"
+      ],
+      "weight": 18.0
+    },
+    {
+      "id": "scythe_death",
+      "base_names": [
+        "Коса",
+        "Серп"
+      ],
+      "adjectives": [
+        "Смертоносная",
+        "Призрачная",
+        "Тёмная"
+      ],
+      "damage_min": 12,
+      "damage_max": 24,
+      "crit_bonus": 0.06,
+      "rarity": "LEGENDARY",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "bleed",
+        "vampiric",
+        "scaling_strength"
+      ],
+      "durability_min": 100,
+      "durability_max": 150,
+      "required_level": 12,
+      "materials": [
+        "magic",
+        "legendary"
+      ],
+      "weight": 55.0
+    },
+    {
+      "id": "blade_inferno",
+      "base_names": [
+        "Клинок",
+        "Меч"
+      ],
+      "adjectives": [
+        "Инфернальный",
+        "Адский",
+        "Бездонный"
+      ],
+      "damage_min": 16,
+      "damage_max": 30,
+      "crit_bonus": 0.08,
+      "rarity": "LEGENDARY",
+      "allowed_classes": [
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fire",
+        "vampiric",
+        "scaling_strength"
+      ],
+      "durability_min": 120,
+      "durability_max": 180,
+      "required_level": 15,
+      "materials": [
+        "legendary",
+        "magic"
+      ],
+      "weight": 45.0
+    },
+    {
+      "id": "staff_void",
+      "base_names": [
+        "Посох",
+        "Жезл",
+        "Скипетр"
+      ],
+      "adjectives": [
+        "Бездны",
+        "Пустоты",
+        "Хаоса"
+      ],
+      "damage_min": 18,
+      "damage_max": 34,
+      "crit_bonus": 0.06,
+      "rarity": "LEGENDARY",
+      "allowed_classes": [
+        "mage"
+      ],
+      "attributes": [
+        "two_handed",
+        "ranged",
+        "lightning",
+        "poison",
+        "fire",
+        "scaling_intelligence"
+      ],
+      "durability_min": 100,
+      "durability_max": 150,
+      "required_level": 15,
+      "materials": [
+        "legendary",
+        "crystal"
+      ],
+      "weight": 28.0
+    },
+    {
+      "id": "whip_serpent",
+      "base_names": [
+        "Плеть",
+        "Хлыст"
+      ],
+      "adjectives": [
+        "Змеиный",
+        "Ядовитый",
+        "Шипастый"
+      ],
+      "damage_min": 4,
+      "damage_max": 10,
+      "dodge_bonus": 0.05,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "one_handed",
+        "ranged",
+        "melee",
+        "poison",
+        "fast",
+        "scaling_agility"
+      ],
+      "durability_min": 30,
+      "durability_max": 50,
+      "required_level": 3,
+      "materials": [
+        "leather",
+        "magic"
+      ],
+      "weight": 15.0
+    },
+    {
+      "id": "fan_blades",
+      "base_names": [
+        "Метательные ножи",
+        "Сюрикены",
+        "Звёздочки"
+      ],
+      "adjectives": [
+        "Острые",
+        "Смертоносные",
+        "Балансированные"
+      ],
+      "damage_min": 2,
+      "damage_max": 5,
+      "crit_bonus": 0.12,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "rogue"
+      ],
+      "attributes": [
+        "ranged",
+        "one_handed",
+        "fast",
+        "scaling_agility",
+        "dual_wield"
+      ],
+      "durability_min": 15,
+      "durability_max": 30,
+      "required_level": 2,
+      "materials": [
+        "iron"
+      ],
+      "weight": 5.0
+    },
+    {
+      "id": "claw_beast",
+      "base_names": [
+        "Когти",
+        "Лапы"
+      ],
+      "adjectives": [
+        "Звериные",
+        "Острые",
+        "Природные"
+      ],
+      "damage_min": 3,
+      "damage_max": 8,
+      "crit_bonus": 0.06,
+      "rarity": "COMMON",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "dual_wield",
+        "melee",
+        "fast",
+        "bleed",
+        "scaling_agility"
+      ],
+      "durability_min": 30,
+      "durability_max": 50,
+      "required_level": 1,
+      "materials": [
+        "bone",
+        "iron"
+      ],
+      "weight": 10.0
+    },
+    {
+      "id": "rapier_fencing",
+      "base_names": [
+        "Рапира",
+        "Шпага"
+      ],
+      "adjectives": [
+        "Изящная",
+        "Колющая",
+        "Дуэльная"
+      ],
+      "damage_min": 4,
+      "damage_max": 9,
+      "crit_bonus": 0.09,
+      "dodge_bonus": 0.04,
+      "rarity": "RARE",
+      "allowed_classes": [
+        "rogue",
+        "warrior"
+      ],
+      "attributes": [
+        "one_handed",
+        "melee",
+        "fast",
+        "scaling_agility"
+      ],
+      "durability_min": 50,
+      "durability_max": 80,
+      "required_level": 3,
+      "materials": [
+        "steel",
+        "silver"
+      ],
+      "weight": 20.0
+    },
+    {
+      "id": "katana_steel",
+      "base_names": [
+        "Катана",
+        "Татибана"
+      ],
+      "adjectives": [
+        "Закалённая",
+        "Острая",
+        "Самурайская"
+      ],
+      "damage_min": 7,
+      "damage_max": 15,
+      "crit_bonus": 0.08,
+      "rarity": "EPIC",
+      "allowed_classes": [
+        "warrior",
+        "rogue"
+      ],
+      "attributes": [
+        "two_handed",
+        "melee",
+        "fast",
+        "bleed",
+        "scaling_agility",
+        "scaling_strength"
+      ],
+      "durability_min": 70,
+      "durability_max": 110,
+      "required_level": 7,
+      "materials": [
+        "steel",
+        "magic"
+      ],
+      "weight": 30.0
+    }
+  ]
+}

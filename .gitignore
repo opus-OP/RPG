@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+.env
+.DS_Store
+*.swp
+*.swo
+*~
+.directory

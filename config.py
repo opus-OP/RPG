@@ -1,0 +1,51 @@
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+# ─── Telegram ─────────────────────────────────────────────
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# TODO: установить BOT_TOKEN в переменных окружения Termux
+
+# ─── База данных ──────────────────────────────────────────
+DATABASE_URL = f"sqlite+aiosqlite:///{DATA_DIR / 'rpg.db'}"
+
+# ─── Нейросеть ────────────────────────────────────────────
+NN_API_URL = os.getenv("NN_API_URL", "https://routerai.ru/api/v1")  # URL API нейронки
+NN_API_KEY = os.getenv("NN_API_KEY", "")                            # Bearer-токен
+NN_MODEL = os.getenv("NN_MODEL", "google/gemini-3.1-flash-lite")    # модель
+NN_TIMEOUT = 15.0          # таймаут запроса к NN (сек)
+NN_MAX_RETRIES = 2         # число повторов при ошибке/невалидном ответе
+
+# ─── Персонажи ────────────────────────────────────────────
+MAX_CHARACTERS_PER_PLAYER = 3   # макс персонажей на одного игрока
+MAX_LEVEL = 50                  # макс уровень
+HP_PER_LEVEL_MULT = 0.1         # множитель HP за уровень: base_hp * (1 + (lvl-1)*0.1)
+STAT_PER_LEVEL_MULT = 0.1       # множитель характеристик за уровень
+LEVEL_CURVE = [0, 100, 250, 500, 850, 1300, 1900, 2700, 3700, 5000]
+# опыт для lvl=1..N; для lvl > len(CURVE): CURVE[-1] * (1 + excess * 0.3)
+
+# ─── Боевая система ───────────────────────────────────────
+CRIT_MULTIPLIER_BASE = 2.0      # базовый множитель крита
+CRIT_CHANCE_MAX = 0.5           # макс шанс крита (50%)
+DODGE_MAX = 0.5                 # макс шанс уклонения (50%)
+DODGE_BUFF_AMOUNT = 0.2         # бонус к уклонению от эффекта DODGE_BONUS
+DMG_RANDOM_MIN = -3             # мин случайной составляющей урона
+DMG_RANDOM_MAX = 3              # макс случайной составляющей урона
+
+# ─── Рейды ────────────────────────────────────────────────
+MAX_GROUP_SIZE = 4                     # макс игроков в группе
+RAID_SOLO_TIMEOUT = 300                # таймаут соло-рейда (сек)
+RAID_GROUP_CREATE_TIMEOUT = 600        # таймаут создания группы (сек)
+RAID_GROUP_JOIN_TIMEOUT = 120          # таймаут присоединения (сек)
+RAID_COOLDOWN_HOURS = 7                # мин часов между рейдами
+
+MARKET_COMMISSION = 0.05        # комиссия аукциона (5%)
+REPAIR_ENABLED = False          # разрешён ли ремонт предметов
+DEATH_DURABILITY_LOSS = 0.10    # потеря прочности экипировки при смерти (10%)
+
+# ─── Генерация лута ───────────────────────────────────────
+WEAPON_MIN_LEVEL_OFFSET = -999  # фактически без ограничения (clamp к 1)
+WEAPON_MAX_LEVEL_OFFSET = 999   # без верхнего ограничения
