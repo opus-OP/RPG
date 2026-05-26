@@ -600,9 +600,15 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
 
-    player_attack, enemy_attack, companion_attack, finished = process_encounter_turn(
-        session, char, nn_modifiers=nn_modifiers,
-    )
+    try:
+        player_attack, enemy_attack, companion_attack, finished = process_encounter_turn(
+            session, char, nn_modifiers=nn_modifiers,
+        )
+    except Exception as e:
+        log.exception("process_encounter_turn crashed")
+        if reply_to:
+            await reply_to.reply_text(f"❌ Ошибка боя: {e}")
+        return
 
     total = len(session.encounters)
     cur = session.current_encounter + 1
