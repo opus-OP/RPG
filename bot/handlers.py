@@ -48,6 +48,25 @@ def _char_status_line(char: Character) -> str:
     return f"❤️ **{char.hp}**/{char.max_hp} | ⚔️ {char.attack_min}-{char.attack_max} | 🛡 {char.defense}"
 
 
+def _initiative_line(enc) -> str:
+    order = enc.initiative_order
+    if not order:
+        return ""
+    icons = {"player": "🧑", "companion": "🛡", "enemy": "👾"}
+    names = {"player": "Вы", "companion": "Страж", "enemy": enc.enemy_template["name"]}
+    parts = [f"{icons.get(who, '❓')}{names.get(who, who)}" for who in order]
+    return f"⚡ Инициатива: {' → '.join(parts)}"
+
+
+def _encounter_header(cur: int, total: int, enc, char: Character) -> str:
+    header = f"⚔️ Рейд {cur}/{total}\n{_initiative_line(enc)}\n\n"
+    header += f"{_enemy_status_line(enc)}\n\n"
+    header += _char_status_line(char)
+    if char.companion and char.companion.alive:
+        header += f"\n🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}"
+    return header
+
+
 def _slot_item(char: Character, slot: str) -> str:
     item = getattr(char.equipment, slot, None)
     if item:
@@ -236,21 +255,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total = len(session.encounters)
         cur = session.current_encounter + 1
 
-        def line_enemy():
-            return _enemy_status_line(enc)
-
-        def line_player():
-            s = _char_status_line(char)
-            if char.companion and char.companion.alive:
-                s += f"\n🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}"
-            return s
-
         player_narrative = (nn_data or {}).get("player_narrative", "")
         enemy_narrative = (nn_data or {}).get("enemy_narrative", "")
 
         async def send_result(kb):
             msg = await update.message.reply_text(
-                f"⚔️ Рейд {cur}/{total}\n\n{line_enemy()}\n\n{line_player()}",
+                _encounter_header(cur, total, enc, char),
                 reply_markup=kb,
             )
             context.user_data["raid_msg_chat"] = msg.chat_id
@@ -258,14 +268,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return msg
 
         # ─── Player action message ───
-        player_text = f"⚔️ Рейд {cur}/{total}\n\n"
+        player_text = f"{_encounter_header(cur, total, enc, char)}\n\n"
         if player_narrative:
             player_text += f"📖 {player_narrative}\n\n"
-        player_text += f"{line_enemy()}\n\n"
         player_text += _attack_desc("Вы", player_attack) + "\n"
         if companion_attack:
             player_text += _attack_desc("🛡 Страж", companion_attack) + "\n"
-        player_text += f"\n{line_player()}"
 
         # ─── Enemy action message / final ───
         if finished:
@@ -315,12 +323,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Enemy alive — send player msg, then enemy msg
             player_text += "\n\n⏳ Ожидание ответа врага..."
             player_msg = await update.message.reply_text(player_text)
-            enemy_text = f"⚔️ Рейд {cur}/{total}\n\n"
+            enemy_text = f"{_encounter_header(cur, total, enc, char)}\n\n"
             if enemy_narrative:
                 enemy_text += f"📖 {enemy_narrative}\n\n"
-            enemy_text += f"{line_enemy()}\n\n"
             enemy_text += _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит") + "\n"
-            enemy_text += f"\n{line_player()}"
             await _save_char(char)
             msg = await player_msg.reply_text(enemy_text, reply_markup=raid_actions())
             context.user_data["raid_msg_chat"] = msg.chat_id
@@ -452,10 +458,7 @@ async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     enc = session.encounters[session.current_encounter]
     total = len(session.encounters)
     cur = session.current_encounter + 1
-    text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
-    if char.companion and char.companion.alive:
-        text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
-    msg = await update.message.reply_text(text, reply_markup=raid_actions())
+    msg = await update.message.reply_text(_encounter_header(cur, total, enc, char), reply_markup=raid_actions())
     context.user_data["raid_msg_chat"] = msg.chat_id
     context.user_data["raid_msg_id"] = msg.message_id
 
@@ -649,10 +652,7 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
     context.user_data["raid_msg_id"] = query.message.message_id
     total = len(session.encounters)
     cur = session.current_encounter + 1
-    text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
-    if char.companion and char.companion.alive:
-        text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
-    await query.edit_message_text(text, reply_markup=raid_actions())
+    await query.edit_message_text(_encounter_header(cur, total, enc, char), reply_markup=raid_actions())
 
 
 async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):

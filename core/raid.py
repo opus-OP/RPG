@@ -51,6 +51,7 @@ class RaidEncounter:
     turn: int = 0
     active_effects: dict[str, list[StatusEffectInstance]] = field(default_factory=dict)
     finished: bool = False
+    initiative_order: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -71,6 +72,16 @@ def generate_enemy_hp(enemy: dict) -> int:
     base = enemy.get("hp", 50)
     variance = secure_randint(-10, 10)
     return max(10, base + variance)
+
+
+def roll_initiative(stat_value: int) -> int:
+    return secure_randint(1, 20) + stat_value // 5
+
+
+def _initiative_order(player_init: int, enemy_init: int) -> list[str]:
+    if enemy_init > player_init:
+        return ["enemy", "player", "companion"]
+    return ["player", "companion", "enemy"]
 
 
 def create_raid(
@@ -97,6 +108,8 @@ def create_raid(
                 "description": mob.attack_secondary.description,
                 "damage_type": mob.attack_secondary.damage_type,
             }
+        player_init = roll_initiative(character.stats.agility)
+        enemy_init = roll_initiative(mob.dodge_chance * 100)
         encounters.append(RaidEncounter(
             enemy_hp=generate_enemy_hp({"hp": mob.hp}),
             enemy_max_hp=mob.hp,
@@ -112,6 +125,7 @@ def create_raid(
                 "atk_damage_type": mob.attack.damage_type,
                 "attack_secondary": atk2,
             },
+            initiative_order=_initiative_order(player_init, enemy_init),
         ))
 
     if group_size > 1:
@@ -128,47 +142,38 @@ def create_raid(
     )
 
 
-def process_encounter_turn(
-    session: RaidSession,
-    character: Character,
-    nn_modifiers: Optional[list[dict]] = None,
-    enemy_nn_modifiers: Optional[list[dict]] = None,
-) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
-    enc = session.encounters[session.current_encounter]
-    enc.turn += 1
-
-    enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
-
-    player_attack, enc.active_effects = resolve_turn(
-        attacker=character,
-        defender=enemy,
-        is_player_attacker=True,
-        turn_number=enc.turn,
-        active_effects=enc.active_effects,
-        nn_modifiers=nn_modifiers,
+def _resolve_player_turn(
+    character: Character, enemy: _Enemy, enc: RaidEncounter,
+    nn_modifiers: Optional[list[dict]],
+) -> AttackResult:
+    atk, enc.active_effects = resolve_turn(
+        attacker=character, defender=enemy,
+        is_player_attacker=True, turn_number=enc.turn,
+        active_effects=enc.active_effects, nn_modifiers=nn_modifiers,
     )
-
     enc.enemy_hp = enemy.hp
-    if enemy.hp <= 0:
-        enc.finished = True
-        return player_attack, None, None, True
+    return atk
 
-    companion_attack = None
-    if character.companion and character.companion.alive:
-        companion = character.companion
-        companion_attack, _ = resolve_turn(
-            attacker=companion,
-            defender=enemy,
-            is_player_attacker=True,
-            turn_number=enc.turn,
-            active_effects={},
-            nn_modifiers=None,
-        )
-        enc.enemy_hp = enemy.hp
-        if enemy.hp <= 0:
-            enc.finished = True
-            return player_attack, None, companion_attack, True
 
+def _resolve_companion_turn(
+    character: Character, enemy: _Enemy, enc: RaidEncounter,
+) -> Optional[AttackResult]:
+    if not character.companion or not character.companion.alive:
+        return None
+    comp = character.companion
+    atk, _ = resolve_turn(
+        attacker=comp, defender=enemy,
+        is_player_attacker=True, turn_number=enc.turn,
+        active_effects={}, nn_modifiers=None,
+    )
+    enc.enemy_hp = enemy.hp
+    return atk
+
+
+def _resolve_enemy_turn(
+    character: Character, enemy: _Enemy, enc: RaidEncounter,
+    enemy_nn_modifiers: Optional[list[dict]],
+) -> AttackResult:
     atk_min_saved, atk_max_saved = enemy.attack_min, enemy.attack_max
     atk_min_pick, atk_max_pick, _, atk_damage_type = enemy.pick_attack()
     enemy.attack_min, enemy.attack_max = atk_min_pick, atk_max_pick
@@ -183,27 +188,55 @@ def process_encounter_turn(
         apply_enemy_modifiers(es, enemy_nn_modifiers)
         enc.active_effects = es.active_effects
 
-    enemy_attack, enc.active_effects = resolve_turn(
-        attacker=enemy,
-        defender=character,
-        is_player_attacker=False,
-        turn_number=enc.turn,
-        active_effects=enc.active_effects,
-        nn_modifiers=None,
+    atk, enc.active_effects = resolve_turn(
+        attacker=enemy, defender=character,
+        is_player_attacker=False, turn_number=enc.turn,
+        active_effects=enc.active_effects, nn_modifiers=None,
     )
-
     enemy.attack_min, enemy.attack_max = atk_min_saved, atk_max_saved
 
-    if enemy_attack.final_damage > 0 and not enemy_attack.is_dodged:
+    if atk.final_damage > 0 and not atk.is_dodged:
         enc.active_effects = apply_mob_status_effects(
-            enc.active_effects, atk_damage_type, enemy_attack.final_damage
+            enc.active_effects, atk_damage_type, atk.final_damage,
         )
+    return atk
 
-    player_died = character.hp <= 0
-    if player_died:
-        enc.finished = True
 
-    return player_attack, enemy_attack, companion_attack, enemy.hp <= 0 or player_died
+def process_encounter_turn(
+    session: RaidSession,
+    character: Character,
+    nn_modifiers: Optional[list[dict]] = None,
+    enemy_nn_modifiers: Optional[list[dict]] = None,
+) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
+    enc = session.encounters[session.current_encounter]
+    enc.turn += 1
+    enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
+
+    order = enc.initiative_order
+    if not order:
+        order = ["player", "companion", "enemy"]
+
+    player_attack: Optional[AttackResult] = None
+    companion_attack: Optional[AttackResult] = None
+    enemy_attack: Optional[AttackResult] = None
+
+    for actor in order:
+        if enc.finished:
+            break
+        if actor == "player":
+            player_attack = _resolve_player_turn(character, enemy, enc, nn_modifiers)
+            if enemy.hp <= 0:
+                enc.finished = True
+        elif actor == "companion":
+            companion_attack = _resolve_companion_turn(character, enemy, enc)
+            if enemy.hp <= 0:
+                enc.finished = True
+        elif actor == "enemy":
+            enemy_attack = _resolve_enemy_turn(character, enemy, enc, enemy_nn_modifiers)
+            if character.hp <= 0:
+                enc.finished = True
+
+    return player_attack, enemy_attack, companion_attack, enc.finished
 
 
 def generate_loot(
