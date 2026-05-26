@@ -224,8 +224,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             action_history=[],
             player_action=text,
         )
-        if nn_data and nn_data.get("narrative"):
-            await update.message.reply_text(f"📖 {nn_data['narrative']}")
         await _do_turn(update, context, char, session,
                        nn_modifiers=nn_data.get("actions") if nn_data else None,
                        enemy_nn_modifiers=nn_data.get("enemy_actions") if nn_data else None,
