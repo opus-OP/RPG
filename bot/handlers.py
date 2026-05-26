@@ -881,7 +881,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          "/debug — меню отладки\n"
                          "/set_level N — установить уровень\n"
                          "/add_gold N — добавить золото\n"
-                         "/add_exp N — добавить опыт")
+                         "/add_exp N — добавить опыт\n"
+                         "/reset_cooldown — сбросить таймер рейда")
 
 
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -967,6 +968,18 @@ async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _save_char(char)
     await _reply(update, f"✅ +{amount} XP, уровень {char.level}")
 
+
+async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    char.last_raid_time = 0.0
+    await _save_char(char)
+    await _reply(update, "✅ Кулдаун рейда сброшен.")
+
 # ─── Регистрация ───────────────────────────────────────────
 
 def register_handlers(app: Application):
@@ -985,6 +998,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("set_level", cmd_set_level))
     app.add_handler(CommandHandler("add_gold", cmd_add_gold))
     app.add_handler(CommandHandler("add_exp", cmd_add_exp))
+    app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown))
 
     app.add_handler(CallbackQueryHandler(cb_main_menu, pattern=r"^main_menu$"))
     app.add_handler(CallbackQueryHandler(cb_profile, pattern=r"^profile$"))
