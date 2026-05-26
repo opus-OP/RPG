@@ -1,7 +1,6 @@
-import asyncio
 import logging
 
-from telegram.ext import Application, ApplicationBuilder
+from telegram.ext import ApplicationBuilder
 
 import config
 from data.storage import storage
@@ -15,7 +14,19 @@ logging.basicConfig(
 log = logging.getLogger("rpg")
 
 
-async def main():
+async def post_init(app):
+    await storage.connect()
+    await MARKET.load_from_storage(storage)
+    log.info(f"БД готова: {storage.db_path}, загружено объявлений: {len(MARKET.listings)}")
+    log.info("Бот запущен. Ожидание команд...")
+
+
+async def post_shutdown(app):
+    await storage.close()
+    log.info("БД закрыта. До свидания!")
+
+
+def main():
     log.info("=" * 40)
     log.info("RPG Bot — запуск")
     log.info("=" * 40)
@@ -25,26 +36,16 @@ async def main():
         log.warning("Работа без Telegram-бота невозможна.")
         return
 
-    log.info("Инициализация базы данных...")
-    await storage.connect()
-    await MARKET.load_from_storage(storage)
-    log.info(f"БД готова: {storage.db_path}, загружено объявлений: {len(MARKET.listings)}")
-
-    log.info("Запуск Telegram-бота (python-telegram-bot)...")
-    app = ApplicationBuilder().token(config.BOT_TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(config.BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
     register_handlers(app)
-
-    try:
-        await app.run_polling(allowed_updates=["message", "callback_query"])
-    except KeyboardInterrupt:
-        log.info("Остановка по Ctrl+C")
-    finally:
-        await storage.close()
-        log.info("БД закрыта. До свидания!")
+    app.run_polling(allowed_updates=["message", "callback_query"])
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    main()
