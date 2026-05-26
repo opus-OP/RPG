@@ -275,7 +275,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 char.in_raid = False
                 char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
                 char.release_companion()
-                char.alive = False
+                char.alive = True
+                char.hp = char.max_hp
                 await _save_char(char)
                 context.user_data.pop("raid", None)
                 await send_result(raid_failed())
@@ -293,6 +294,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         char.mark_raid_done()
                         char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
                         char.release_companion()
+                        char.hp = char.max_hp
                         await _save_char(char)
                         loot_text = ""
                         if loot:
@@ -731,6 +733,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             char.in_raid = False
             char.mark_raid_done()
             char.release_companion()
+            char.hp = char.max_hp
             await _save_char(char)
             text = "🏆 **Рейд пройден!**\n"
             if loot:
@@ -758,6 +761,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
         char.in_raid = False
         char.release_companion()
         char.mark_raid_done()
+        char.hp = char.max_hp
         await _save_char(char)
     await query.edit_message_text("🏃 Вы сбежали из рейда!", reply_markup=main_menu())
 
