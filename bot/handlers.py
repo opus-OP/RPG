@@ -110,6 +110,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/inventory — инвентарь\n"
         "/location — список локаций\n"
         "/market — рынок\n"
+        "/raid — вернуться в рейд\n"
         "/characters — мои персонажи\n"
         "/start — главное меню",
     )
@@ -326,6 +327,25 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "🏪 Рынок пуст.", reply_markup=main_menu())
         return
     await _show_market(update, context, listings, 0)
+
+
+async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session = context.user_data.get("raid")
+    if not session or session.status != RaidStatus.IN_PROGRESS:
+        await _reply(update, "Нет активного рейда. /location чтобы начать.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    enc = session.encounters[session.current_encounter]
+    total = len(session.encounters)
+    cur = session.current_encounter + 1
+    text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
+    if char.companion:
+        text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
+    msg = await update.message.reply_text(text, reply_markup=raid_actions())
+    context.user_data["raid_msg_chat"] = msg.chat_id
+    context.user_data["raid_msg_id"] = msg.message_id
 
 
 async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listings: list, page: int):
@@ -858,6 +878,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("characters", cmd_characters))
     app.add_handler(CommandHandler("location", cmd_location))
     app.add_handler(CommandHandler("market", cmd_market))
+    app.add_handler(CommandHandler("raid", cmd_raid))
 
     app.add_handler(CallbackQueryHandler(cb_main_menu, pattern=r"^main_menu$"))
     app.add_handler(CallbackQueryHandler(cb_profile, pattern=r"^profile$"))
