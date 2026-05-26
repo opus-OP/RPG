@@ -757,6 +757,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if char:
         char.in_raid = False
         char.release_companion()
+        char.mark_raid_done()
         await _save_char(char)
     await query.edit_message_text("🏃 Вы сбежали из рейда!", reply_markup=main_menu())
 
