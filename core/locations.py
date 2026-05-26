@@ -116,4 +116,5 @@ def get_locations() -> dict[str, Location]:
     return dict(_loc_db)
 
 
+_load_all()
 LOCATIONS: dict[str, Location] = _loc_db
