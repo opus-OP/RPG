@@ -44,6 +44,7 @@ def _build_messages(
     player: dict,
     enemies: list[dict],
     action_history: list[str],
+    player_action: str = "",
 ) -> list[dict[str, str]]:
     ctx = (
         f"Локация: {location}\n"
@@ -55,6 +56,8 @@ def _build_messages(
     for i, e in enumerate(enemies, 1):
         ctx += f"  {i}. {e.get('name', '?')} — HP {e.get('hp', '?')}/{e.get('max_hp', '?')}\n"
     ctx += f"\nИстория действий: {', '.join(action_history) or 'начало боя'}\n"
+    if player_action:
+        ctx += f"\nДействие игрока: {player_action}\n"
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": ctx},
@@ -82,6 +85,7 @@ async def call_narrative_api(
     player: dict,
     enemies: list[dict],
     action_history: Optional[list[str]] = None,
+    player_action: str = "",
 ) -> Optional[dict[str, Any]]:
     if action_history is None:
         action_history = []
@@ -97,7 +101,7 @@ async def call_narrative_api(
     headers = {"Authorization": f"Bearer {config.NN_API_KEY}", "Content-Type": "application/json"}
     body = {
         "model": config.NN_MODEL,
-        "messages": _build_messages(location, turn, player, enemies, action_history),
+        "messages": _build_messages(location, turn, player, enemies, action_history, player_action),
         "temperature": 0.8,
         "max_tokens": 512,
     }

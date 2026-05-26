@@ -3,7 +3,7 @@ import uuid
 import logging
 from typing import Optional
 
-from telegram import Update, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
@@ -193,6 +193,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state and state["step"] == "companion_desc":
         state["companion_description"] = text
         await _finish_creation(update, context, state)
+        return
+
+    raid_pending = context.user_data.get("raid_action_pending")
+    if raid_pending:
+        session = context.user_data.get("raid")
+        if not session or session.status != RaidStatus.IN_PROGRESS:
+            context.user_data.pop("raid_action_pending", None)
+            await update.message.reply_text("Рейд уже завершён.")
+            return
+        char = await _get_char(uid)
+        if not char:
+            context.user_data.pop("raid_action_pending", None)
+            return
+        context.user_data.pop("raid_action_pending", None)
+        enc = session.encounters[session.current_encounter]
+        nn_data = await call_narrative_api(
+            location=session.location_key,
+            turn=enc.turn,
+            player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
+            enemies=[{"name": enc.enemy_template["name"], "hp": enc.enemy_hp, "max_hp": enc.enemy_max_hp}],
+            action_history=[],
+            player_action=text,
+        )
+        if nn_data and nn_data.get("narrative"):
+            await update.message.reply_text(f"📖 {nn_data['narrative']}")
+        await _do_turn(update, context, char, session,
+                       nn_modifiers=nn_data.get("actions") if nn_data else None,
+                       narrative=nn_data.get("narrative", "") if nn_data else "")
         return
 
     sell = context.user_data.get("sell")
@@ -455,57 +483,42 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _save_char(char)
     context.user_data["raid"] = session
 
-    await _show_encounter(query, char, session)
+    await _show_encounter(query, context, char, session)
 
-
-async def _show_encounter(query, char: Character, session: RaidSession):
-    enc = session.encounters[session.current_encounter]
-    total = len(session.encounters)
-    cur = session.current_encounter + 1
-    text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
-    if char.companion:
-        text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
-    await query.edit_message_text(text, reply_markup=raid_actions())
-
-# ─── Callback: действия в бою ───────────────────────────────
-
-async def cb_raid_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    uid = update.effective_user.id
     session = context.user_data.get("raid")
     if not session or session.status != RaidStatus.IN_PROGRESS:
         return
-    char = await _get_char(uid)
+    char = await _get_char(update.effective_user.id)
     if not char:
         return
-    await _do_turn(query, update, context, char, session, nn_modifiers=None)
-
-
-async def cb_raid_nn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    session = context.user_data.get("raid")
-    if not session or session.status != RaidStatus.IN_PROGRESS:
-        return
-    char = await _get_char(uid)
-    if not char:
-        return
-    enc = session.encounters[session.current_encounter]
-    nn_data = await call_narrative_api(
-        location=session.location_key,
-        turn=enc.turn,
-        player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
-        enemies=[{"name": enc.enemy_template["name"], "hp": enc.enemy_hp, "max_hp": enc.enemy_max_hp}],
-        action_history=[],
+    context.user_data["raid_msg_chat"] = query.message.chat_id
+    context.user_data["raid_msg_id"] = query.message.message_id
+    context.user_data["raid_action_pending"] = True
+    await query.edit_message_text(
+        query.message.text + "\n\n✏️ Напишите, что делает ваш персонаж:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="raid_cancel_action"),
+        ]]),
     )
-    await _do_turn(query, update, context, char, session,
-                   nn_modifiers=nn_data.get("actions") if nn_data else None)
 
 
-async def _do_turn(query, update: Update, context: ContextTypes.DEFAULT_TYPE,
-                   char: Character, session: RaidSession, nn_modifiers):
+async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("raid_action_pending", None)
+    session = context.user_data.get("raid")
+    if session:
+        enc = session.encounters[session.current_encounter]
+        await _show_encounter(query, context, await _get_char(update.effective_user.id), session)
+    else:
+        await query.edit_message_text("Главное меню:", reply_markup=main_menu())
+
+
+async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                   char: Character, session: RaidSession, nn_modifiers, narrative: str = ""):
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
 
@@ -516,6 +529,8 @@ async def _do_turn(query, update: Update, context: ContextTypes.DEFAULT_TYPE,
     total = len(session.encounters)
     cur = session.current_encounter + 1
     text = f"⚔️ Рейд {cur}/{total}\n\n"
+    if narrative:
+        text += f"📖 {narrative}\n\n"
     text += _enemy_status_line(enc) + "\n\n"
     text += _attack_desc("Вы", player_attack) + "\n"
     if enemy_attack:
@@ -533,7 +548,7 @@ async def _do_turn(query, update: Update, context: ContextTypes.DEFAULT_TYPE,
             char.alive = False
             await _save_char(char)
             context.user_data.pop("raid", None)
-            await query.edit_message_text(text, reply_markup=raid_failed())
+            await _edit_turn_msg(context, text, raid_failed())
         elif enc.enemy_hp <= 0:
             text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
             enc.finished = True
@@ -550,20 +565,29 @@ async def _do_turn(query, update: Update, context: ContextTypes.DEFAULT_TYPE,
                     await _save_char(char)
                     loot_text = ""
                     if loot:
-                        loot_text = "\n🎁 Добыча: " + ", ".join(
-                            f"{it.name} [{it.rarity.value}]" for it in loot)
+                        loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
                     text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
                     context.user_data.pop("raid", None)
-                    await query.edit_message_text(text, reply_markup=raid_done())
+                    await _edit_turn_msg(context, text, raid_done())
                 else:
                     text += "\n\n⚠️ Ошибка: локация не найдена."
-                    await query.edit_message_text(text, reply_markup=main_menu())
+                    await _edit_turn_msg(context, text, main_menu())
             else:
-                await query.edit_message_text(text, reply_markup=raid_next())
+                await _edit_turn_msg(context, text, raid_next())
         else:
-            await query.edit_message_text(text, reply_markup=raid_actions())
+            await _edit_turn_msg(context, text, raid_actions())
     else:
-        await query.edit_message_text(text, reply_markup=raid_actions())
+        await _edit_turn_msg(context, text, raid_actions())
+
+
+async def _edit_turn_msg(context, text: str, kb):
+    chat_id = context.user_data.get("raid_msg_chat")
+    msg_id = context.user_data.get("raid_msg_id")
+    if chat_id and msg_id:
+        try:
+            await context.bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+        except Exception:
+            pass
 
 # ─── Callback: рейд — следующий враг ───────────────────────
 
@@ -595,7 +619,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("raid", None)
             await query.edit_message_text(text, reply_markup=raid_done())
         return
-    await _show_encounter(query, char, session)
+    await _show_encounter(query, context, char, session)
 
 # ─── Callback: рейд — сбежать ──────────────────────────────
 
@@ -848,8 +872,8 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(cb_location_select, pattern=r"^loc_"))
     app.add_handler(CallbackQueryHandler(cb_raid_start, pattern=r"^raid_start_"))
 
-    app.add_handler(CallbackQueryHandler(cb_raid_attack, pattern=r"^raid_attack$"))
-    app.add_handler(CallbackQueryHandler(cb_raid_nn, pattern=r"^raid_nn$"))
+    app.add_handler(CallbackQueryHandler(cb_raid_action, pattern=r"^raid_action$"))
+    app.add_handler(CallbackQueryHandler(cb_raid_cancel_action, pattern=r"^raid_cancel_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_next, pattern=r"^raid_next$"))
     app.add_handler(CallbackQueryHandler(cb_raid_leave, pattern=r"^raid_leave$"))
 

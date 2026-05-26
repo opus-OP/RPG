@@ -42,8 +42,7 @@ def confirm_raid(location_key: str) -> InlineKeyboardMarkup:
 
 def raid_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚔️ Атаковать", callback_data="raid_attack"),
-         InlineKeyboardButton("🔮 Спросить NN", callback_data="raid_nn")],
+        [InlineKeyboardButton("🔮 Действие", callback_data="raid_action")],
         [InlineKeyboardButton("🏃 Сбежать", callback_data="raid_leave")],
     ])
 
