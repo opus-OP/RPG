@@ -66,6 +66,72 @@ class RaidSession:
     total_exp: int = 0
     total_gold: int = 0
     group_id: Optional[str] = None
+    participant_names: dict[int, str] = field(default_factory=dict)
+
+
+def _effect_to_dict(e: StatusEffectInstance) -> dict:
+    return {"kind": e.kind.value, "remaining": e.remaining, "damage_per_tick": e.damage_per_tick}
+
+
+def _effect_from_dict(d: dict) -> StatusEffectInstance:
+    return StatusEffectInstance(StatusEffect(d["kind"]), d["remaining"], d.get("damage_per_tick", 0.0))
+
+
+def raid_encounter_to_dict(enc: RaidEncounter) -> dict:
+    return {
+        "enemy_hp": enc.enemy_hp,
+        "enemy_max_hp": enc.enemy_max_hp,
+        "enemy_template": enc.enemy_template,
+        "turn": enc.turn,
+        "active_effects": {
+            k: [_effect_to_dict(e) for e in v] for k, v in enc.active_effects.items()
+        },
+        "finished": enc.finished,
+        "initiative_order": enc.initiative_order,
+    }
+
+
+def raid_encounter_from_dict(d: dict) -> RaidEncounter:
+    return RaidEncounter(
+        enemy_hp=d["enemy_hp"],
+        enemy_max_hp=d["enemy_max_hp"],
+        enemy_template=d["enemy_template"],
+        turn=d.get("turn", 0),
+        active_effects={
+            k: [_effect_from_dict(e) for e in v]
+            for k, v in d.get("active_effects", {}).items()
+        },
+        finished=d.get("finished", False),
+        initiative_order=d.get("initiative_order", []),
+    )
+
+
+def session_to_dict(session: RaidSession) -> dict:
+    return {
+        "raid_id": session.raid_id,
+        "location_key": session.location_key,
+        "status": session.status.value,
+        "current_encounter": session.current_encounter,
+        "total_exp": session.total_exp,
+        "total_gold": session.total_gold,
+        "group_id": session.group_id,
+        "participant_names": session.participant_names,
+        "encounters": [raid_encounter_to_dict(e) for e in session.encounters],
+    }
+
+
+def session_from_dict(data: dict) -> RaidSession:
+    return RaidSession(
+        raid_id=data["raid_id"],
+        location_key=data["location_key"],
+        status=RaidStatus(data.get("status", "pending")),
+        current_encounter=data.get("current_encounter", 0),
+        total_exp=data.get("total_exp", 0),
+        total_gold=data.get("total_gold", 0),
+        group_id=data.get("group_id"),
+        participant_names=data.get("participant_names", {}),
+        encounters=[raid_encounter_from_dict(e) for e in data.get("encounters", [])],
+    )
 
 
 def generate_enemy_hp(enemy: dict) -> int:

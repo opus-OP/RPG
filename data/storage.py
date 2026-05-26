@@ -120,6 +120,37 @@ class Storage:
         )
         await self._conn.commit()
 
+    async def save_raid_session(self, raid_id: str, data: dict):
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO raids (raid_id, data) VALUES (?, ?)",
+            (raid_id, json.dumps(data, ensure_ascii=False)),
+        )
+        await self._conn.commit()
+
+    async def load_raid_session(self, raid_id: str) -> Optional[dict]:
+        cursor = await self._conn.execute(
+            "SELECT data FROM raids WHERE raid_id = ?", (raid_id,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            return json.loads(row["data"])
+        return None
+
+    async def delete_raid_session(self, raid_id: str):
+        await self._conn.execute("DELETE FROM raids WHERE raid_id = ?", (raid_id,))
+        await self._conn.commit()
+
+    async def find_raid_by_participant(self, user_id: int, status: str = "") -> Optional[dict]:
+        cursor = await self._conn.execute("SELECT raid_id, data FROM raids")
+        rows = await cursor.fetchall()
+        for row in rows:
+            data = json.loads(row["data"])
+            if data.get("status") == "pending" or data.get("status") == status or not status:
+                for p in data.get("participants", []):
+                    if p.get("owner_tg_id") == user_id:
+                        return data
+        return None
+
     async def deactivate_market_listing(self, listing_id: str):
         await self._conn.execute(
             "UPDATE market_listings SET active = 0 WHERE listing_id = ?",

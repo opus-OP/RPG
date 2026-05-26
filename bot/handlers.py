@@ -13,13 +13,14 @@ from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PE
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS, get_location
-from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidStatus
+from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidStatus, session_to_dict, session_from_dict
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
 from bot.keyboards import (
     main_menu, class_selection, location_list, confirm_raid,
     raid_actions, raid_next, raid_done, raid_failed,
+    raid_lobby, raid_lobby_text,
     inventory_pages, item_actions as item_actions_kb,
     char_list, char_delete_confirm, market_listings as market_listings_kb, market_confirm,
 )
@@ -224,7 +225,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     raid_pending = context.user_data.get("raid_action_pending")
     if raid_pending:
-        session = context.user_data.get("raid")
+        session = await _get_session(context)
         if not session or session.status != RaidStatus.IN_PROGRESS:
             context.user_data.pop("raid_action_pending", None)
             await update.message.reply_text("Рейд уже завершён.")
@@ -252,6 +253,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if player_attack is None:
             return
 
+        await _save_session(context, session)
         total = len(session.encounters)
         cur = session.current_encounter + 1
 
@@ -286,7 +288,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 char.alive = True
                 char.hp = char.max_hp
                 await _save_char(char)
-                context.user_data.pop("raid", None)
+                _cleanup_raid(context)
                 await send_result(raid_failed())
             elif enc.enemy_hp <= 0:
                 enc.finished = True
@@ -308,7 +310,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if loot:
                             loot_text = "\n🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
                         player_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
-                        context.user_data.pop("raid", None)
+                        _cleanup_raid(context)
                         await send_result(raid_done())
                     else:
                         player_text += "\n\n⚠️ Ошибка: локация не найдена."
@@ -440,7 +442,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    session = context.user_data.get("raid")
+    session = await _get_session(context)
     if not session or session.status != RaidStatus.IN_PROGRESS:
         char = await _get_char(update.effective_user.id, context)
         if char and char.in_raid:
@@ -646,6 +648,233 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _show_encounter(query, context, char, session)
 
 
+# ─── Онлайн-рейд: лобби ─────────────────────────────────────
+
+async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    key = query.data[len("raid_online_"):]
+    loc = get_location(key)
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Персонаж не найден.")
+        return
+    if not char.can_raid():
+        rem = char.raid_cooldown_remaining()
+        hrs = int(rem // 3600)
+        mins = int((rem % 3600) // 60)
+        await query.edit_message_text(f"⏳ До следующего рейда {hrs}ч {mins}м.")
+        return
+
+    raid_id = str(uuid.uuid4())[:8]
+    code = token_hex(3).upper()
+    session = create_raid(char, loc, raid_id)
+    session.status = RaidStatus.PENDING
+    session.participant_names = {uid: char.name}
+    await storage.save_raid_session(raid_id, session_to_dict(session))
+    context.user_data["raid_id"] = raid_id
+    await query.edit_message_text(
+        raid_lobby_text(loc.name, code, [(uid, char.name)]),
+        reply_markup=raid_lobby(loc.name, code, [(uid, char.name)], True),
+    )
+
+
+async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await _reply(update, "Использование: /join <код>")
+        return
+    code = args[0].upper()
+    cursor = await storage._conn.execute("SELECT raid_id, data FROM raids")
+    rows = await cursor.fetchall()
+    target = None
+    for row in rows:
+        data = json.loads(row["data"])
+        if data.get("status") != "pending":
+            continue
+        sid = row["raid_id"]
+        # code is stored separately — we need a lookup. Use simple convention: code = raid_id
+        if sid == code:
+            target = row
+            break
+    if not target:
+        await _reply(update, f"Рейд с кодом `{code}` не найден или уже начался.")
+        return
+
+    uid = update.effective_user.id
+    char = await _get_char(uid, context)
+    if not char:
+        return
+    if not char.can_raid():
+        await _reply(update, "Ваш персонаж не может участвовать (кулдаун).")
+        return
+
+    data = json.loads(target["data"])
+    participants = data.get("participant_names", {})
+    if uid in participants:
+        await _reply(update, "Вы уже в этом рейде.")
+        return
+    if len(participants) >= 4:
+        await _reply(update, "В рейде уже 4 игрока — максимум.")
+        return
+
+    participants[uid] = char.name
+    data["participant_names"] = participants
+    await storage.save_raid_session(target["raid_id"], data)
+    context.user_data["raid_id"] = target["raid_id"]
+
+    loc_name = get_location(data["location_key"]).name if get_location(data["location_key"]) else "?"
+    part_list = [(int(k), v) for k, v in participants.items()]
+    text = raid_lobby_text(loc_name, target["raid_id"], part_list)
+    await _reply(update, f"✅ Вы присоединились к рейду **{loc_name}**!")
+    # Notify the owner
+    owner_id = int(list(participants.keys())[0])
+    try:
+        from telegram.helpers import escape_markdown
+        await context.bot.send_message(
+            owner_id,
+            f"👤 {char.name} присоединился к рейду!",
+        )
+    except Exception:
+        pass
+
+
+async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    raid_id = context.user_data.get("raid_id")
+    if not raid_id:
+        await query.edit_message_text("Рейд не найден.")
+        return
+    data = await storage.load_raid_session(raid_id)
+    if not data:
+        await query.edit_message_text("Рейд не найден в БД.")
+        return
+    participants = data.get("participant_names", {})
+    owner_id = int(list(participants.keys())[0])
+    if uid != owner_id:
+        await query.edit_message_text("Только создатель может начать рейд.")
+        return
+    if len(participants) < 1:
+        await query.edit_message_text("Нужен хотя бы 1 участник.")
+        return
+
+    loc = get_location(data["location_key"])
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+
+    raid_id = data["raid_id"]
+    session = session_from_dict(data)
+    session.status = RaidStatus.IN_PROGRESS
+    # Scale HP for group size
+    gs = len(participants)
+    if gs > 1:
+        for enc in session.encounters:
+            enc.enemy_hp = int(enc.enemy_hp * (1 + 0.3 * (gs - 1)))
+            enc.enemy_max_hp = enc.enemy_hp
+    await storage.save_raid_session(raid_id, session_to_dict(session))
+
+    # Notify all participants
+    for pid in participants:
+        try:
+            char = await _get_char(pid, context)
+            if char:
+                char.in_raid = True
+                await _save_char(char)
+            enc = session.encounters[0]
+            await context.bot.send_message(
+                pid,
+                f"⚔️ Рейд в **{loc.name}** начался!\n\n"
+                f"👾 {enc.enemy_template['name']} ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}",
+                reply_markup=raid_actions(),
+            )
+        except Exception:
+            pass
+
+    await query.edit_message_text("⚔️ Рейд начат! Участники оповещены.")
+
+
+async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    raid_id = context.user_data.get("raid_id")
+    if not raid_id:
+        await query.edit_message_text("Рейд не найден.")
+        return
+    data = await storage.load_raid_session(raid_id)
+    if not data:
+        await query.edit_message_text("Рейд не найден в БД.")
+        return
+    participants = data.get("participant_names", {})
+    if uid not in participants:
+        await query.edit_message_text("Вы не в этом рейде.")
+        return
+    del participants[uid]
+    context.user_data.pop("raid_id", None)
+    if not participants:
+        await storage.delete_raid_session(raid_id)
+        await query.edit_message_text("Вы вышли. Рейд удалён (нет участников).")
+        return
+    data["participant_names"] = participants
+    await storage.save_raid_session(raid_id, data)
+    loc = get_location(data["location_key"])
+    loc_name = loc.name if loc else "?"
+    part_list = [(int(k), v) for k, v in participants.items()]
+    await query.edit_message_text(
+        raid_lobby_text(loc_name, raid_id, part_list),
+        reply_markup=raid_lobby(loc_name, raid_id, part_list, uid == int(list(participants.keys())[0])),
+    )
+
+
+async def _get_session(context) -> Optional[RaidSession]:
+    """Get raid session from user_data or DB."""
+    session = context.user_data.get("raid")
+    if session:
+        return session
+    raid_id = context.user_data.get("raid_id")
+    if not raid_id:
+        return None
+    data = await storage.load_raid_session(raid_id)
+    if not data:
+        return None
+    return session_from_dict(data)
+
+
+def _cleanup_raid(context):
+    context.user_data.pop("raid", None)
+    context.user_data.pop("raid_id", None)
+    context.user_data.pop("raid_action_pending", None)
+
+
+async def _save_session(context, session: RaidSession):
+    """Save raid session to user_data or DB."""
+    raid_id = context.user_data.get("raid_id")
+    if raid_id:
+        await storage.save_raid_session(raid_id, session_to_dict(session))
+    else:
+        context.user_data["raid"] = session
+
+
+async def _notify_participants(context, session: RaidSession, text: str, kb=None):
+    """Notify all participants of a raid."""
+    for uid_str in session.participant_names:
+        uid = int(uid_str)
+        try:
+            if kb:
+                await context.bot.send_message(uid, text, reply_markup=kb)
+            else:
+                await context.bot.send_message(uid, text)
+        except Exception:
+            pass
+
+
 async def _show_encounter(query, context, char: Character, session: RaidSession):
     enc = session.encounters[session.current_encounter]
     context.user_data["raid_msg_chat"] = query.message.chat_id
@@ -658,7 +887,7 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
 async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    session = context.user_data.get("raid")
+    session = await _get_session(context)
     if not session or session.status != RaidStatus.IN_PROGRESS:
         await query.edit_message_text("Нет активного рейда.", reply_markup=main_menu())
         return
@@ -669,6 +898,7 @@ async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
     context.user_data["raid_action_pending"] = True
+    await _save_session(context, session)
     await query.edit_message_text(
         query.message.text + "\n\n✏️ Напишите, что делает ваш персонаж:",
         reply_markup=InlineKeyboardMarkup([[
@@ -681,9 +911,8 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     context.user_data.pop("raid_action_pending", None)
-    session = context.user_data.get("raid")
+    session = await _get_session(context)
     if session:
-        enc = session.encounters[session.current_encounter]
         await _show_encounter(query, context, await _get_char(update.effective_user.id, context), session)
     else:
         await query.edit_message_text("Главное меню:", reply_markup=main_menu())
@@ -714,7 +943,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = update.effective_user.id
-    session = context.user_data.get("raid")
+    session = await _get_session(context)
     if not session:
         await query.edit_message_text("Рейд не найден.")
         return
@@ -723,6 +952,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Персонаж не найден.")
         return
     session.current_encounter += 1
+    await _save_session(context, session)
     if session.current_encounter >= len(session.encounters):
         loc = get_location(session.location_key)
         if loc:
@@ -738,7 +968,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "🏆 **Рейд пройден!**\n"
             if loot:
                 text += "🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
-            context.user_data.pop("raid", None)
+            _cleanup_raid(context)
             await query.edit_message_text(text, reply_markup=raid_done())
         else:
             await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
@@ -751,8 +981,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = update.effective_user.id
-    context.user_data.pop("raid_action_pending", None)
-    session = context.user_data.pop("raid", None)
+    session = await _get_session(context)
     if not session:
         await query.edit_message_text("Рейд не найден.", reply_markup=main_menu())
         return
@@ -763,6 +992,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
         char.mark_raid_done()
         char.hp = char.max_hp
         await _save_char(char)
+    _cleanup_raid(context)
     await query.edit_message_text("🏃 Вы сбежали из рейда!", reply_markup=main_menu())
 
 # ─── Callback: инвентарь — страницы + предмет ──────────────
@@ -1175,8 +1405,12 @@ def register_handlers(app: Application):
 
     app.add_handler(CallbackQueryHandler(cb_class_select, pattern=r"^class_"))
 
+    app.add_handler(CommandHandler("join", cmd_raid_join))
     app.add_handler(CallbackQueryHandler(cb_location_select, pattern=r"^loc_"))
     app.add_handler(CallbackQueryHandler(cb_raid_start, pattern=r"^raid_start_"))
+    app.add_handler(CallbackQueryHandler(cb_raid_online_create, pattern=r"^raid_online_"))
+    app.add_handler(CallbackQueryHandler(cb_raid_lobby_start, pattern=r"^raid_lobby_start$"))
+    app.add_handler(CallbackQueryHandler(cb_raid_lobby_leave, pattern=r"^raid_lobby_leave$"))
 
     app.add_handler(CallbackQueryHandler(cb_raid_action, pattern=r"^raid_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_cancel_action, pattern=r"^raid_cancel_action$"))

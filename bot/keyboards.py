@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from secrets import token_hex
 
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS
@@ -35,9 +36,30 @@ def location_list() -> InlineKeyboardMarkup:
 
 def confirm_raid(location_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Вперёд!", callback_data=f"raid_start_{location_key}")],
+        [InlineKeyboardButton("⚔️ Соло", callback_data=f"raid_start_{location_key}")],
+        [InlineKeyboardButton("👥 Онлайн", callback_data=f"raid_online_{location_key}")],
         [InlineKeyboardButton("❌ Отмена", callback_data="main_menu")],
     ])
+
+def raid_lobby(location_name: str, code: str, participants: list[tuple[int, str]], is_owner: bool) -> InlineKeyboardMarkup:
+    keyboard = []
+    for uid, name in participants:
+        keyboard.append([InlineKeyboardButton(f"👤 {name}", callback_data="raid_lobby_noop")])
+    if is_owner:
+        keyboard.append([InlineKeyboardButton("⚔️ Начать рейд", callback_data="raid_lobby_start")])
+    keyboard.append([InlineKeyboardButton("🏃 Выйти", callback_data="raid_lobby_leave")])
+    return InlineKeyboardMarkup(keyboard)
+
+def raid_lobby_text(location_name: str, code: str, participants: list[tuple[int, str]]) -> str:
+    lines = [f"🎮 **{location_name}** — ожидание игроков"]
+    lines.append(f"🔑 Код: `{code}`")
+    lines.append("")
+    lines.append("**Участники:**")
+    for uid, name in participants:
+        lines.append(f"• {name}")
+    lines.append("")
+    lines.append("Отправь код другому игроку, чтобы он присоединился через `/join`.")
+    return "\n".join(lines)
 
 
 def raid_actions() -> InlineKeyboardMarkup:
