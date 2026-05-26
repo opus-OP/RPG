@@ -45,6 +45,7 @@ RAID_COOLDOWN_HOURS = 7                # мин часов между рейда
 MARKET_COMMISSION = 0.05        # комиссия аукциона (5%)
 REPAIR_ENABLED = False          # разрешён ли ремонт предметов
 DEATH_DURABILITY_LOSS = 0.10    # потеря прочности экипировки при смерти (10%)
+DURABILITY_LOSS_PERCENT = 3     # потеря прочности экипировки за рейд (%)
 
 # ─── Админ ──────────────────────────────────────────────────
 ADMIN_PASSWORD = "krop"

@@ -51,9 +51,10 @@ def calc_damage(
     modifier_mult: float = 1.0,
     guaranteed_crit: bool = False,
     shield_absorb: float = 0.0,
+    dodge_override: float | None = None,
 ) -> AttackResult:
     base_dmg = secure_randint(attacker.attack_min, attacker.attack_max)
-    dodge = defender.dodge_chance
+    dodge = dodge_override if dodge_override is not None else defender.dodge_chance
     if roll_chance(dodge) and not guaranteed_crit:
         return AttackResult(
             raw_damage=base_dmg,
@@ -172,16 +173,15 @@ def resolve_turn(
             if mod.get("modifier") == "WEAK_SPOT_FOUND":
                 modifier_mult = max(0.1, float(mod.get("value", 1.0)))
 
-    temp_dodge = defender.dodge_chance
+    dodge_override = None
     if dodge_buff:
-        defender.dodge_chance = clamp(defender.dodge_chance + DODGE_BUFF_AMOUNT, 0.0, DODGE_MAX)
+        dodge_override = clamp(defender.dodge_chance + DODGE_BUFF_AMOUNT, 0.0, DODGE_MAX)
 
-    result = calc_damage(attacker, defender, modifier_mult=modifier_mult, guaranteed_crit=crit_boost, shield_absorb=shield_absorb)
+    result = calc_damage(attacker, defender, modifier_mult=modifier_mult, guaranteed_crit=crit_boost, shield_absorb=shield_absorb, dodge_override=dodge_override)
 
     if result.final_damage > 0 and not result.is_dodged:
         defender.hp = max(0, defender.hp - result.final_damage)
 
-    defender.dodge_chance = temp_dodge
     state.active_effects = _tick_effects(state.active_effects)
     return result, state.active_effects
 

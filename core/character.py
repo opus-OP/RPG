@@ -251,9 +251,10 @@ class Character:
     def release_companion(self):
         self.companion = None
 
-    def durability_damage_all(self, amount: int = 1):
+    def durability_damage_all(self, amount: int = 1, percent: float = 0.0):
         for item in self.equipment.equipped_items()[:]:
-            item.wear(amount)
+            dmg = max(1, int(item.durability_max * percent)) if percent > 0 else amount
+            item.wear(dmg)
             if item.broken:
                 slot = None
                 for s in ("weapon", "armor", "accessory"):

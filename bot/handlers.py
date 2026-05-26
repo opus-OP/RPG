@@ -9,7 +9,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 
-from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD
+from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS, get_location
@@ -90,9 +90,7 @@ async def _reply(update: Update, text: str, **kwargs):
         await update.message.reply_text(text, **kwargs)
 
 
-async def _edit_msg(update: Update, text: str, **kwargs):
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, **kwargs)
+
 
 
 # ─── /start ─────────────────────────────────────────────────
@@ -292,7 +290,7 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛡 Броня: {_slot_item(char, 'armor')}\n"
         f"💍 Аксессуар: {_slot_item(char, 'accessory')}"
     )
-    if char.companion:
+    if char.companion and char.companion.alive:
         c = char.companion
         text += f"\n\n🛡 Страж: {c.name}\n❤️ {c.hp}/{c.max_hp} | ⚔️ {c.attack_min}-{c.attack_max}"
     await _reply(update, text, reply_markup=main_menu())
@@ -343,7 +341,7 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = context.user_data.get("raid")
     if not session or session.status != RaidStatus.IN_PROGRESS:
-        char = await _get_char(update.effective_user.id)
+        char = await _get_char(update.effective_user.id, context)
         if char and char.in_raid:
             char.in_raid = False
             char.release_companion()
@@ -352,14 +350,15 @@ async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await _reply(update, "Нет активного рейда. /location чтобы начать.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
+        await _reply(update, "Персонаж не найден.")
         return
     enc = session.encounters[session.current_encounter]
     total = len(session.encounters)
     cur = session.current_encounter + 1
     text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
-    if char.companion:
+    if char.companion and char.companion.alive:
         text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
     msg = await update.message.reply_text(text, reply_markup=raid_actions())
     context.user_data["raid_msg_chat"] = msg.chat_id
@@ -386,7 +385,7 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         await query.edit_message_text("Нет персонажа. /create")
         return
@@ -408,7 +407,7 @@ async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         await query.edit_message_text("Нет персонажа. /create")
         return
@@ -418,7 +417,7 @@ async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         await query.edit_message_text("Нет персонажа. /create", reply_markup=main_menu())
         return
@@ -479,7 +478,7 @@ async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not loc:
         await query.edit_message_text("Локация не найдена.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         await query.edit_message_text("Нет персонажа. /create")
         return
@@ -532,6 +531,13 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Персонаж не найден.")
             return
 
+    if not char.can_raid():
+        rem = char.raid_cooldown_remaining()
+        hrs = int(rem // 3600)
+        mins = int((rem % 3600) // 60)
+        await query.edit_message_text(f"⏳ До следующего рейда {hrs}ч {mins}м.")
+        return
+
     raid_id = str(uuid.uuid4())[:8]
     session = create_raid(char, loc, raid_id)
     session.status = RaidStatus.IN_PROGRESS
@@ -549,7 +555,7 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
     total = len(session.encounters)
     cur = session.current_encounter + 1
     text = f"⚔️ Рейд {cur}/{total}\n\n{_enemy_status_line(enc)}\n\n{_char_status_line(char)}\n"
-    if char.companion:
+    if char.companion and char.companion.alive:
         text += f"🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}\n"
     await query.edit_message_text(text, reply_markup=raid_actions())
 
@@ -559,9 +565,11 @@ async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     session = context.user_data.get("raid")
     if not session or session.status != RaidStatus.IN_PROGRESS:
+        await query.edit_message_text("Нет активного рейда.", reply_markup=main_menu())
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
+        await query.edit_message_text("Персонаж не найден.", reply_markup=main_menu())
         return
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
@@ -581,7 +589,7 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
     session = context.user_data.get("raid")
     if session:
         enc = session.encounters[session.current_encounter]
-        await _show_encounter(query, context, await _get_char(update.effective_user.id), session)
+        await _show_encounter(query, context, await _get_char(update.effective_user.id, context), session)
     else:
         await query.edit_message_text("Главное меню:", reply_markup=main_menu())
 
@@ -592,7 +600,7 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
     uid = update.effective_user.id
     enc = session.encounters[session.current_encounter]
 
-    player_attack, enemy_attack, finished = process_encounter_turn(
+    player_attack, enemy_attack, companion_attack, finished = process_encounter_turn(
         session, char, nn_modifiers=nn_modifiers,
     )
 
@@ -603,10 +611,12 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
         text += f"📖 {narrative}\n\n"
     text += _enemy_status_line(enc) + "\n\n"
     text += _attack_desc("Вы", player_attack) + "\n"
+    if companion_attack:
+        text += _attack_desc("🛡 Страж", companion_attack) + "\n"
     if enemy_attack:
         text += _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит") + "\n"
     text += f"\n{_char_status_line(char)}"
-    if char.companion:
+    if char.companion and char.companion.alive:
         text += f"\n🛡 Страж: ❤️ {char.companion.hp}/{char.companion.max_hp}"
 
     if finished:
@@ -614,6 +624,7 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
             text += "\n\n💀 **Вы погибли!**"
             session.status = RaidStatus.FAILED
             char.in_raid = False
+            char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
             char.release_companion()
             char.alive = False
             await _save_char(char)
@@ -631,6 +642,7 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     char.inventory.extend(loot)
                     char.in_raid = False
                     char.mark_raid_done()
+                    char.durability_damage_all(percent=DURABILITY_LOSS_PERCENT / 100.0)
                     char.release_companion()
                     await _save_char(char)
                     loot_text = ""
@@ -643,10 +655,13 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     text += "\n\n⚠️ Ошибка: локация не найдена."
                     await _edit_turn_msg(context, text, main_menu(), reply_to)
             else:
+                await _save_char(char)
                 await _edit_turn_msg(context, text, raid_next(), reply_to)
         else:
+            await _save_char(char)
             await _edit_turn_msg(context, text, raid_actions(), reply_to)
     else:
+        await _save_char(char)
         await _edit_turn_msg(context, text, raid_actions(), reply_to)
 
 
@@ -675,9 +690,11 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     session = context.user_data.get("raid")
     if not session:
+        await query.edit_message_text("Рейд не найден.")
         return
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
+        await query.edit_message_text("Персонаж не найден.")
         return
     session.current_encounter += 1
     if session.current_encounter >= len(session.encounters):
@@ -696,6 +713,8 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += "🎁 Добыча: " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
             context.user_data.pop("raid", None)
             await query.edit_message_text(text, reply_markup=raid_done())
+        else:
+            await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
         return
     await _show_encounter(query, context, char, session)
 
@@ -705,10 +724,12 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = update.effective_user.id
+    context.user_data.pop("raid_action_pending", None)
     session = context.user_data.pop("raid", None)
     if not session:
+        await query.edit_message_text("Рейд не найден.", reply_markup=main_menu())
         return
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if char:
         char.in_raid = False
         char.release_companion()
@@ -720,7 +741,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_inv_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     page = int(query.data[len("inv_page_"):])
@@ -732,7 +753,7 @@ async def cb_inv_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     item_uid = query.data[len("inv_item_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         return
     item = next((i for i in char.inventory if i.uid == item_uid), None)
@@ -763,7 +784,7 @@ async def cb_inv_equip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     item_uid = query.data[len("inv_equip_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         return
     item = next((i for i in char.inventory if i.uid == item_uid), None)
@@ -783,7 +804,7 @@ async def cb_inv_unequip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     item_uid = query.data[len("inv_unequip_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         return
     item = None
@@ -808,7 +829,7 @@ async def cb_inv_drop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     item_uid = query.data[len("inv_drop_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         return
     item = next((i for i in char.inventory if i.uid == item_uid), None)
@@ -825,7 +846,7 @@ async def cb_inv_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     item_uid = query.data[len("inv_sell_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         return
     item = next((i for i in char.inventory if i.uid == item_uid), None)
@@ -866,7 +887,7 @@ async def cb_market_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = update.effective_user.id
     lid = query.data[len("market_confirm_"):]
-    char = await _get_char(uid)
+    char = await _get_char(uid, context)
     if not char:
         await query.edit_message_text("Нет персонажа.")
         return
@@ -948,7 +969,7 @@ async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("admin"):
         await _reply(update, "Доступ запрещён.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     await _reply(update,
@@ -976,7 +997,7 @@ async def cmd_set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await _reply(update, "Введите число.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     char.level = max(1, min(lvl, 50))
@@ -999,7 +1020,7 @@ async def cmd_add_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await _reply(update, "Введите число.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     char.gold += amount
@@ -1020,7 +1041,7 @@ async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await _reply(update, "Введите число.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     char.add_experience(amount)
@@ -1032,7 +1053,7 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not context.user_data.get("admin"):
         await _reply(update, "Доступ запрещён.")
         return
-    char = await _get_char(update.effective_user.id)
+    char = await _get_char(update.effective_user.id, context)
     if not char:
         return
     char.last_raid_time = 0.0

@@ -121,7 +121,7 @@ def create_raid(
 
     return RaidSession(
         raid_id=raid_id,
-        location_key=location.name,
+        location_key=location.key,
         participants=[character],
         encounters=encounters,
         group_id=group_id,
@@ -132,14 +132,11 @@ def process_encounter_turn(
     session: RaidSession,
     character: Character,
     nn_modifiers: Optional[list[dict]] = None,
-) -> tuple[AttackResult, Optional[AttackResult], bool]:
+) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
     enc = session.encounters[session.current_encounter]
     enc.turn += 1
 
     enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
-
-    # TODO: получать narrative-описание от нейросети
-    # narrative = await call_nn(session, character, enc)
 
     player_attack, enc.active_effects = resolve_turn(
         attacker=character,
@@ -153,7 +150,7 @@ def process_encounter_turn(
     enc.enemy_hp = enemy.hp
     if enemy.hp <= 0:
         enc.finished = True
-        return player_attack, None, True
+        return player_attack, None, None, True
 
     companion_attack = None
     if character.companion and character.companion.alive:
@@ -169,7 +166,7 @@ def process_encounter_turn(
         enc.enemy_hp = enemy.hp
         if enemy.hp <= 0:
             enc.finished = True
-            return player_attack, companion_attack, True
+            return player_attack, None, companion_attack, True
 
     atk_min_saved, atk_max_saved = enemy.attack_min, enemy.attack_max
     atk_min_pick, atk_max_pick, _, atk_damage_type = enemy.pick_attack()
@@ -194,7 +191,7 @@ def process_encounter_turn(
     if player_died:
         enc.finished = True
 
-    return player_attack, enemy_attack, enemy.hp <= 0 or player_died
+    return player_attack, enemy_attack, companion_attack, enemy.hp <= 0 or player_died
 
 
 def generate_loot(
