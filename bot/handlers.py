@@ -9,7 +9,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 
-from config import MAX_CHARACTERS_PER_PLAYER
+from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS, get_location
@@ -866,6 +866,107 @@ async def cb_char_switch(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.edit_message_text(f"✅ Переключено на **{target.name}**", reply_markup=main_menu())
 
+# ─── Админ-команды ─────────────────────────────────────────
+
+async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await _reply(update, "Использование: /admin <пароль>")
+        return
+    if args[0] != ADMIN_PASSWORD:
+        await _reply(update, "Неверный пароль.")
+        return
+    context.user_data["admin"] = True
+    await _reply(update, "🔧 Режим администратора активирован.\n"
+                         "/debug — меню отладки\n"
+                         "/set_level N — установить уровень\n"
+                         "/add_gold N — добавить золото\n"
+                         "/add_exp N — добавить опыт")
+
+
+async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    await _reply(update,
+        f"🔧 Отладка — {char.name}\n"
+        f"Уровень: {char.level}\n"
+        f"Опыт: {char.experience}/{char.exp_to_next}\n"
+        f"HP: {char.hp}/{char.max_hp}\n"
+        f"💰 {char.gold}\n"
+        f"in_raid: {char.in_raid}\n"
+        f"alive: {char.alive}\n"
+        f"last_raid: {char.last_raid_time}",
+    )
+
+
+async def cmd_set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    args = context.args
+    if not args:
+        await _reply(update, "/set_level <число>")
+        return
+    try:
+        lvl = int(args[0])
+    except ValueError:
+        await _reply(update, "Введите число.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    char.level = max(1, min(lvl, 50))
+    char._recalc_stats()
+    char.hp = char.max_hp
+    await _save_char(char)
+    await _reply(update, f"✅ Уровень {char.level}, HP восстановлено.")
+
+
+async def cmd_add_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    args = context.args
+    if not args:
+        await _reply(update, "/add_gold <число>")
+        return
+    try:
+        amount = int(args[0])
+    except ValueError:
+        await _reply(update, "Введите число.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    char.gold += amount
+    await _save_char(char)
+    await _reply(update, f"✅ +{amount}💰, теперь {char.gold}💰")
+
+
+async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    args = context.args
+    if not args:
+        await _reply(update, "/add_exp <число>")
+        return
+    try:
+        amount = int(args[0])
+    except ValueError:
+        await _reply(update, "Введите число.")
+        return
+    char = await _get_char(update.effective_user.id)
+    if not char:
+        return
+    char.add_experience(amount)
+    await _save_char(char)
+    await _reply(update, f"✅ +{amount} XP, уровень {char.level}")
+
 # ─── Регистрация ───────────────────────────────────────────
 
 def register_handlers(app: Application):
@@ -879,6 +980,11 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("location", cmd_location))
     app.add_handler(CommandHandler("market", cmd_market))
     app.add_handler(CommandHandler("raid", cmd_raid))
+    app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("debug", cmd_debug))
+    app.add_handler(CommandHandler("set_level", cmd_set_level))
+    app.add_handler(CommandHandler("add_gold", cmd_add_gold))
+    app.add_handler(CommandHandler("add_exp", cmd_add_exp))
 
     app.add_handler(CallbackQueryHandler(cb_main_menu, pattern=r"^main_menu$"))
     app.add_handler(CallbackQueryHandler(cb_profile, pattern=r"^profile$"))
