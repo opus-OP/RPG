@@ -332,6 +332,13 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = context.user_data.get("raid")
     if not session or session.status != RaidStatus.IN_PROGRESS:
+        char = await _get_char(update.effective_user.id)
+        if char and char.in_raid:
+            char.in_raid = False
+            char.release_companion()
+            await _save_char(char)
+            await _reply(update, "Обнаружен зависший флаг рейда — сброшен. /location чтобы начать заново.")
+            return
         await _reply(update, "Нет активного рейда. /location чтобы начать.")
         return
     char = await _get_char(update.effective_user.id)
@@ -466,8 +473,13 @@ async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text("Нет персонажа. /create")
         return
     if char.in_raid:
-        await query.edit_message_text("Вы уже в рейде! Завершите его.")
-        return
+        session = context.user_data.get("raid")
+        if session and session.status == RaidStatus.IN_PROGRESS:
+            await query.edit_message_text("Вы уже в рейде! Завершите его.")
+            return
+        char.in_raid = False
+        char.release_companion()
+        await _save_char(char)
     if not char.can_raid():
         rem = char.raid_cooldown_remaining()
         hrs = int(rem // 3600)
