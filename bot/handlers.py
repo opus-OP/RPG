@@ -729,7 +729,7 @@ async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TY
 async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
-        await _reply(update, "Использование: /join <код>")
+        await _reply(update, "Использование: /raidjoin <код>")
         return
     code = args[0]
     uid = update.effective_user.id
@@ -1485,7 +1485,7 @@ def register_handlers(app: Application):
 
     app.add_handler(CallbackQueryHandler(cb_class_select, pattern=r"^class_"))
 
-    app.add_handler(CommandHandler("join", cmd_raid_join))
+    app.add_handler(CommandHandler("raidjoin", cmd_raid_join))
     app.add_handler(CallbackQueryHandler(cb_location_select, pattern=r"^loc_"))
     app.add_handler(CallbackQueryHandler(cb_raid_start, pattern=r"^raid_start_"))
     app.add_handler(CallbackQueryHandler(cb_raid_online_create, pattern=r"^raid_online_"))

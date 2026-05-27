@@ -71,7 +71,7 @@ def raid_lobby_text(location_name: str, code: str, participants: list[tuple[int,
     for uid, name in participants:
         lines.append(f"• {name}")
     lines.append("")
-    lines.append("Отправь код другому игроку, чтобы он присоединился через `/join`.")
+    lines.append("Отправь код другому игроку, чтобы он присоединился через `/raidjoin`.")
     return "\n".join(lines)
 
 
