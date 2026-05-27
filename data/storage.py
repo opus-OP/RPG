@@ -114,6 +114,18 @@ class Storage:
             chars.append(char)
         return chars
 
+    async def find_character_global(self, name: str) -> Optional[tuple[int, Character]]:
+        cursor = await self._conn.execute(
+            "SELECT owner_tg_id, data FROM characters WHERE name = ?",
+            (name,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            data = json.loads(row["data"])
+            char = character_from_dict(data, _ITEM_TEMPLATES)
+            return (row["owner_tg_id"], char)
+        return None
+
     async def load_character_by_name(self, owner_tg_id: int, name: str) -> Optional[Character]:
         cursor = await self._conn.execute(
             "SELECT data FROM characters WHERE owner_tg_id = ? AND name = ?",

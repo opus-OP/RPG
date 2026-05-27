@@ -1320,24 +1320,18 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
     uid = update.effective_user.id
-    username = None
+    char_name = None
     if args:
         for a in args:
             if a.startswith("@"):
-                username = a.lstrip("@")
+                char_name = a.lstrip("@")
                 break
-    if username:
-        try:
-            chat = await context.bot.get_chat(f"@{username}")
-            target_uid = chat.id
-        except Exception:
-            await _reply(update, f"Пользователь @{username} не найден.")
+    if char_name:
+        result = await storage.find_character_global(char_name)
+        if result is None:
+            await _reply(update, f"Персонаж @{char_name} не найден.")
             return None
-        chars = await storage.load_characters(target_uid)
-        if not chars:
-            await _reply(update, f"У @{username} нет персонажа.")
-            return None
-        return chars[0]
+        return result[1]
     return await _get_char(uid, context)
 
 
