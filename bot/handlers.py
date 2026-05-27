@@ -1321,8 +1321,13 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
     uid = update.effective_user.id
-    if args and args[0].startswith("@"):
-        username = args[0].lstrip("@")
+    username = None
+    if args:
+        for a in args:
+            if a.startswith("@"):
+                username = a.lstrip("@")
+                break
+    if username:
         try:
             chat = await context.bot.get_chat(f"@{username}")
             target_uid = chat.id
