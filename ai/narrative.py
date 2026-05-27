@@ -11,16 +11,25 @@ from utils.validators import validate_nn_response
 log = logging.getLogger("rpg.nn")
 
 MODIFIER_LIST = (
-    "- WEAK_SPOT_FOUND: множитель урона (0.3–2.0, <1 ослабление)\n"
-    "- DODGE_BONUS: бонус к уклонению (0.0–0.3)\n"
-    "- STUN: враг пропускает ход\n"
-    "- CRIT_BOOST: гарантированный крит\n"
-    "- TAUNT: щит (value × 30 ед.)\n"
+    "- WEAK_SPOT_FOUND: множитель урона (0.3–2.0). >1 = усиление атаки (нашёл брешь), <1 = ослабление (споткнулся, скользко, неудачный удар).\n"
+    "- DODGE_BONUS: бонус к уклонению (0.0–0.3). Игрок уворачивается от ответной атаки врага.\n"
+    "- STUN: враг пропускает ход (0 или 1). Оглушение, замешательство врага.\n"
+    "- CRIT_BOOST: гарантированный критический удар (0 или 1). Идеальный момент для мощной атаки.\n"
+    "- TAUNT: щит (value × 30 ед. поглощения). Игрок ставит блок, провоцирует врага на себя.\n"
+)
+
+MODIFIER_TARGET_HINT = (
+    '\nКаждый модификатор обязательно содержит "target": "player" (эффект на игрока) или "target": "enemy" (эффект на врага).\n'
 )
 
 MODIFIER_EXAMPLE = (
-    '\nПример:\n'
+    '\nПример для player_modifiers:\n'
     '{"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}]}'
+)
+
+ENEMY_MODIFIER_EXAMPLE = (
+    '\nПример для enemy_modifiers:\n'
+    '{"enemy_actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 0.7, "target": "enemy"}]}'
 )
 
 SYSTEM_PROMPTS: dict[str, str] = {
@@ -28,7 +37,10 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "Ты — нарратор RPG-боя.\n\n"
         "Верни ТОЛЬКО JSON с полем \"actions\" — список модификаторов для атаки игрока.\n"
         "Пустой список, если модификаторы не нужны.\n\n"
-        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_EXAMPLE
+        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_TARGET_HINT
+        + 'WEAK_SPOT_FOUND, CRIT_BOOST, DODGE_BONUS, TAUNT — обычно target: "player" (накладываются на игрока).\n'
+        + 'STUN — всегда target: "enemy".\n'
+        + MODIFIER_EXAMPLE
     ),
     "player_narrative": (
         "Ты — нарратор RPG-боя. Опиши действие игрока ярко и живо.\n\n"
@@ -39,7 +51,13 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "Ты — нарратор RPG-боя.\n\n"
         "Верни ТОЛЬКО JSON с полем \"enemy_actions\" — список модификаторов для атаки врага.\n"
         "Пустой список, если модификаторы не нужны.\n\n"
-        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_EXAMPLE.replace("actions", "enemy_actions")
+        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_TARGET_HINT
+        + 'WEAK_SPOT_FOUND — target: "enemy" (враг наносит повышенный/пониженный урон игроку).\n'
+        + 'CRIT_BOOST — target: "enemy" (враг критует).\n'
+        + 'DODGE_BONUS — target: "enemy" (враг уворачивается от атаки игрока).\n'
+        + 'TAUNT — target: "enemy" (щит врага).\n'
+        + 'STUN — target: "player" (игрок пропускает ход).\n'
+        + ENEMY_MODIFIER_EXAMPLE
     ),
     "enemy_narrative": (
         "Ты — нарратор RPG-боя. Опиши ответное действие врага ярко и живо.\n\n"
