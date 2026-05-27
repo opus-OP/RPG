@@ -11,6 +11,7 @@ import logging
 from typing import Optional
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
@@ -115,6 +116,7 @@ async def _ensure_char(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Op
 
 
 async def _reply(update: Update, text: str, **kwargs):
+    kwargs.setdefault("parse_mode", ParseMode.MARKDOWN)
     if update.callback_query:
         try:
             await update.callback_query.edit_message_text(text, **kwargs)
@@ -277,6 +279,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async def send_result(kb):
             msg = await update.message.reply_text(
                 full_text,
+                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=kb,
             )
             context.user_data["raid_msg_chat"] = msg.chat_id
