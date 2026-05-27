@@ -245,6 +245,16 @@ class Storage:
                         return data
         return None
 
+    async def load_all_characters(self) -> list[tuple[int, Character]]:
+        cursor = await self._conn.execute("SELECT owner_tg_id, data FROM characters")
+        rows = await cursor.fetchall()
+        result = []
+        for row in rows:
+            data = json.loads(row["data"])
+            char = character_from_dict(data, _ITEM_TEMPLATES)
+            result.append((row["owner_tg_id"], char))
+        return result
+
     # ─── Управление ──────────────────────────────────────────
 
     async def close(self):

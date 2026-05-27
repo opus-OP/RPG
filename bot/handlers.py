@@ -469,6 +469,34 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"\n\n🛡 Страж: {c.name}\n❤️ {c.hp}/{c.max_hp} | ⚔️ {c.attack_min}-{c.attack_max}"
     await _reply(update, text, reply_markup=main_menu())
 
+
+# ═══════════════════════════════════════════════════════════════
+# /toprpg — топ персонажей
+# ═══════════════════════════════════════════════════════════════
+
+async def cmd_toprpg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    all_chars = await storage.load_all_characters()
+    if not all_chars:
+        await _reply(update, "Пока нет ни одного персонажа.")
+        return
+
+    by_level = sorted(all_chars, key=lambda x: x[1].level, reverse=True)[:10]
+    by_gold = sorted(all_chars, key=lambda x: x[1].gold, reverse=True)[:10]
+
+    lines = ["🏆 **Топ по уровню:**"]
+    for i, (_, c) in enumerate(by_level, 1):
+        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+        lines.append(f"{medal} **{c.name}** — ур. {c.level} ({CLASS_NAMES_RU.get(c.class_key, c.class_key)})")
+
+    lines.append("")
+    lines.append("💰 **Топ по золоту:**")
+    for i, (_, c) in enumerate(by_gold, 1):
+        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+        lines.append(f"{medal} **{c.name}** — {c.gold}💰")
+
+    await _reply(update, "\n".join(lines))
+
+
 # ═══════════════════════════════════════════════════════════════
 # /inventory — инвентарь
 # ═══════════════════════════════════════════════════════════════
@@ -1522,6 +1550,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("add_gold", cmd_add_gold))
     app.add_handler(CommandHandler("add_exp", cmd_add_exp))
     app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown))
+    app.add_handler(CommandHandler("toprpg", cmd_toprpg))
 
     app.add_handler(CallbackQueryHandler(cb_main_menu, pattern=r"^main_menu$"))
     app.add_handler(CallbackQueryHandler(cb_profile, pattern=r"^profile$"))
