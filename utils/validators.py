@@ -6,7 +6,7 @@
 from typing import Any
 
 ALLOWED_MODIFIERS: dict[str, tuple[float, float]] = {
-    "WEAK_SPOT_FOUND": (1.2, 2.0),
+    "WEAK_SPOT_FOUND": (0.3, 2.0),
     "DODGE_BONUS": (0.0, 0.3),
     "TAUNT": (0.0, 1.0),
     "STUN": (0.0, 1.0),

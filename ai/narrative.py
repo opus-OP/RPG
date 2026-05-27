@@ -34,7 +34,7 @@ SYSTEM_PROMPT = (
 )
 
 MODIFIER_DESCRIPTIONS = {
-    "WEAK_SPOT_FOUND": '{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"} — урон х1.5 (value 1.2–2.0)',
+    "WEAK_SPOT_FOUND": '{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"} — модификатор урона x1.5 (value 0.3–2.0, <1 = ослабление)',
     "DODGE_BONUS": '{"modifier": "DODGE_BONUS", "value": 0.15, "target": "player"} — уклонение +15% (value 0.0–0.3)',
     "STUN": '{"modifier": "STUN", "value": 1.0, "target": "enemy"} — враг пропускает ход',
     "CRIT_BOOST": '{"modifier": "CRIT_BOOST", "value": 1.0, "target": "player"} — гарантированный крит',
