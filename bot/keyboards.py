@@ -187,6 +187,15 @@ def market_listings(listings: list, page: int = 0, per_page: int = 5) -> InlineK
     return InlineKeyboardMarkup(keyboard)
 
 
+def stats_distribution() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💪 Сила +1", callback_data="stat_str")],
+        [InlineKeyboardButton("🏃 Ловкость +1", callback_data="stat_agi")],
+        [InlineKeyboardButton("🧠 Интеллект +1", callback_data="stat_int")],
+        [InlineKeyboardButton("✅ Готово", callback_data="profile")],
+    ])
+
+
 def market_confirm(listing_id: str) -> InlineKeyboardMarkup:
     """Подтверждение покупки."""
     return InlineKeyboardMarkup([

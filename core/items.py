@@ -5,7 +5,7 @@ Item — конкретный экземпляр с UID, износом и со�
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -33,7 +33,6 @@ class ItemEffect:
     Для предметов COMMON значения — базовые; редкость умножает их.
     """
     hp_bonus: int = 0
-    atk_bonus: int = 0
     crit_chance_bonus: float = 0.0
     crit_multiplier_bonus: float = 0.0
     defense_bonus: int = 0
@@ -43,18 +42,10 @@ class ItemEffect:
     intelligence_bonus: int = 0
 
     def __add__(self, other: ItemEffect) -> ItemEffect:
-        """Суммирует два набора эффектов (для нескольких экипированных предметов)."""
-        return ItemEffect(
-            hp_bonus=self.hp_bonus + other.hp_bonus,
-            atk_bonus=self.atk_bonus + other.atk_bonus,
-            crit_chance_bonus=self.crit_chance_bonus + other.crit_chance_bonus,
-            crit_multiplier_bonus=self.crit_multiplier_bonus + other.crit_multiplier_bonus,
-            defense_bonus=self.defense_bonus + other.defense_bonus,
-            dodge_bonus=self.dodge_bonus + other.dodge_bonus,
-            strength_bonus=self.strength_bonus + other.strength_bonus,
-            agility_bonus=self.agility_bonus + other.agility_bonus,
-            intelligence_bonus=self.intelligence_bonus + other.intelligence_bonus,
-        )
+        total = ItemEffect()
+        for field in self.__dataclass_fields__:
+            setattr(total, field, getattr(self, field) + getattr(other, field))
+        return total
 
 
 RARITY_EFFECT_MULTIPLIER = {
@@ -84,34 +75,24 @@ class ItemTemplate:
     durability_max: int = 100
 
     def final_effect(self) -> ItemEffect:
-        """Возвращает эффект с учётом множителя редкости."""
         mult = RARITY_EFFECT_MULTIPLIER[self.rarity]
-        return ItemEffect(
-            hp_bonus=int(self.base_effect.hp_bonus * mult),
-            atk_bonus=int(self.base_effect.atk_bonus * mult),
-            crit_chance_bonus=self.base_effect.crit_chance_bonus * mult,
-            crit_multiplier_bonus=self.base_effect.crit_multiplier_bonus * mult,
-            defense_bonus=int(self.base_effect.defense_bonus * mult),
-            dodge_bonus=self.base_effect.dodge_bonus * mult,
-            strength_bonus=int(self.base_effect.strength_bonus * mult),
-            agility_bonus=int(self.base_effect.agility_bonus * mult),
-            intelligence_bonus=int(self.base_effect.intelligence_bonus * mult),
-        )
+        result = ItemEffect()
+        for field in ItemEffect.__dataclass_fields__:
+            base_val = getattr(self.base_effect, field, 0)
+            if isinstance(base_val, int):
+                setattr(result, field, int(base_val * mult))
+            else:
+                setattr(result, field, base_val * mult)
+        return result
 
 
 @dataclass
 class Item:
-    """Конкретный экземпляр предмета.
-
-    Атрибуты:
-        template: Ссылка на шаблон.
-        uid: Уникальный идентификатор экземпляра.
-        durability: Текущая прочность (0 = сломан).
-    """
     template: ItemTemplate
     uid: str
     durability: int
     durability_max: int
+    attributes: list[str] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -134,5 +115,4 @@ class Item:
         return self.template.final_effect()
 
     def wear(self, amount: int = 1) -> None:
-        """Снижает прочность, но не ниже 0."""
         self.durability = max(0, self.durability - amount)

@@ -1,10 +1,3 @@
-"""Генерация лута: оружие из паттернов.
-
-32 паттерна оружия в weapons.json. Каждый паттерн содержит базовые имена,
-прилагательные, диапазон урона, бонусы и ограничения по классу/уровню.
-Редкость определяет множитель эффектов.
-"""
-
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -12,7 +5,6 @@ from typing import Optional
 
 from core.items import Item, ItemTemplate, ItemEffect, ItemType, Rarity
 from utils.rng import secure_randint
-from config import WEAPON_MIN_LEVEL_OFFSET, WEAPON_MAX_LEVEL_OFFSET
 
 WEAPON_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "weapons.json"
 
@@ -20,7 +12,6 @@ _weapon_patterns: list[dict] = []
 
 
 def load_weapon_patterns(path: str | Path = WEAPON_DATA_PATH):
-    """Загружает паттерны оружия из JSON."""
     global _weapon_patterns
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -28,7 +19,6 @@ def load_weapon_patterns(path: str | Path = WEAPON_DATA_PATH):
 
 
 def get_weapon_patterns() -> list[dict]:
-    """Возвращает все паттерны оружия (с ленивой загрузкой)."""
     if not _weapon_patterns:
         load_weapon_patterns()
     return _weapon_patterns
@@ -41,7 +31,6 @@ def find_patterns(
     max_rarity: str = "LEGENDARY",
     allowed_classes: Optional[list[str]] = None,
 ) -> list[dict]:
-    """Фильтрует паттерны по уровню, редкости и классу."""
     patterns = get_weapon_patterns()
     rarity_rank = {"COMMON": 0, "RARE": 1, "EPIC": 2, "LEGENDARY": 3}
     min_rank = rarity_rank.get(min_rarity, 0)
@@ -60,12 +49,14 @@ def find_patterns(
     return matched
 
 
-def roll_weapon_from_pattern(pattern: dict, uid: str) -> Optional[Item]:
-    """Создаёт экземпляр Item из паттерна.
+SCALING_ATTR_TO_STAT = {
+    "scaling_strength": "strength_bonus",
+    "scaling_agility": "agility_bonus",
+    "scaling_intelligence": "intelligence_bonus",
+}
 
-    Выбирает случайное имя и прилагательное, генерирует урон в диапазоне.
-    TODO: AI-генерация названия и описания на основе паттерна + локация + моб.
-    """
+
+def roll_weapon_from_pattern(pattern: dict, uid: str) -> Optional[Item]:
     rarity_map = {
         "COMMON": Rarity.COMMON,
         "RARE": Rarity.RARE,
@@ -82,12 +73,22 @@ def roll_weapon_from_pattern(pattern: dict, uid: str) -> Optional[Item]:
 
     dmg_min = pattern["damage_min"]
     dmg_max = pattern["damage_max"]
-    atk_bonus = secure_randint(dmg_min, dmg_max)
+    total_power = secure_randint(dmg_min, dmg_max)
 
-    crit_bonus = pattern.get("crit_bonus", 0.0)
-    dodge_bonus = pattern.get("dodge_bonus", 0.0)
+    attributes = list(pattern.get("attributes", []))
+    scaling_attrs = [a for a in attributes if a in SCALING_ATTR_TO_STAT]
 
-    effect = ItemEffect(atk_bonus=atk_bonus, crit_chance_bonus=crit_bonus, dodge_bonus=dodge_bonus)
+    effect = ItemEffect(
+        crit_chance_bonus=pattern.get("crit_bonus", 0.0),
+        dodge_bonus=pattern.get("dodge_bonus", 0.0),
+    )
+
+    if scaling_attrs:
+        per_stat = total_power // len(scaling_attrs)
+        remainder = total_power % len(scaling_attrs)
+        for i, attr in enumerate(scaling_attrs):
+            bonus = per_stat + (1 if i < remainder else 0)
+            setattr(effect, SCALING_ATTR_TO_STAT[attr], bonus)
 
     dur_min = pattern.get("durability_min", 50)
     dur_max = pattern.get("durability_max", 100)
@@ -101,7 +102,7 @@ def roll_weapon_from_pattern(pattern: dict, uid: str) -> Optional[Item]:
         required_level=pattern["required_level"],
         durability_max=durability,
     )
-    return Item(template=tpl, uid=uid, durability=durability, durability_max=durability)
+    return Item(template=tpl, uid=uid, durability=durability, durability_max=durability, attributes=attributes)
 
 
 def generate_loot_weapons(
@@ -113,15 +114,7 @@ def generate_loot_weapons(
     min_level: int = 0,
     max_level: int = 0,
 ) -> list[Item]:
-    """Генерирует список предметов-лута.
-
-    Аргументы:
-        character_level: Уровень персонажа (для расчёта требуемого уровня).
-        allowed_classes: Какие классы могут использовать (фильтр паттернов).
-        num_rolls: Количество попыток генерации.
-        min/max_rarity: Диапазон редкости.
-        min/max_level: Диапазон уровня предметов.
-    """
+    from config import WEAPON_MIN_LEVEL_OFFSET, WEAPON_MAX_LEVEL_OFFSET
     if min_level <= 0 or max_level <= 0:
         min_level = max(1, character_level + WEAPON_MIN_LEVEL_OFFSET)
         max_level = character_level + WEAPON_MAX_LEVEL_OFFSET
@@ -147,7 +140,6 @@ def generate_loot_weapons(
 
 
 def get_attributes_descriptions(pattern: dict) -> list[str]:
-    """Переводит атрибуты оружия в человекочитаемые описания."""
     attr_descriptions = {
         "one_handed": "Одноручное",
         "two_handed": "Двуручное",

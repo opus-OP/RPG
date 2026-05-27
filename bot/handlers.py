@@ -19,9 +19,9 @@ from telegram.ext import (
 
 from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS
 from core.character import Character
-from core.classes import CLASSES, CLASS_NAMES_RU
+from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
-from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidEncounter, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn, build_initiative_order, get_current_turn, advance_turn_core, pick_enemy_target
+from core.raid import create_raid, generate_loot, distribute_exp_gold, RaidSession, RaidEncounter, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn, build_initiative_order, get_current_turn, advance_turn_core, pick_enemy_target
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
@@ -47,7 +47,8 @@ def _attack_desc(owner: str, result, noun: str = "нанесли") -> str:
     if result.is_dodged:
         return f"🛡 {owner} промахнулись!"
     crit = " КРИТ!" if result.is_crit else ""
-    return f"⚔️ {owner} {noun} {dmg} урона{crit}"
+    attr_label = {"strength": "💪", "agility": "🏃", "intelligence": "🧠"}.get(result.attribute, "")
+    return f"⚔️ {owner} {noun} {dmg} урона{crit} {attr_label}"
 
 
 def _enemy_status_line(enc) -> str:
@@ -309,10 +310,13 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hrs = int(rem // 3600)
         mins = int((rem % 3600) // 60)
         raid_info = f"\n⏳ Рейд через {hrs}ч {mins}м"
+    points_line = ""
+    if char.stat_points > 0:
+        points_line = f"\n📌 **{char.stat_points}** очков для распределения"
     text = (
         f"👤 **{char.name}** — {t.name} | Ур. {char.level}\n"
         f"📝 {char.description}\n"
-        f"✨ Опыт: {char.experience}/{char.exp_to_next}\n\n"
+        f"✨ Опыт: {char.experience}/{char.exp_to_next}{points_line}\n\n"
         f"{_char_status_line(char)}\n"
         f"🎯 Крит: {char.crit_chance*100:.1f}% | Уклон: {char.dodge_chance*100:.1f}%\n"
         f"📊 Сила {s.strength} | Ловк {s.agility} | Инт {s.intelligence}\n\n"
@@ -324,7 +328,11 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if char.companion and char.companion.alive:
         c = char.companion
         text += f"\n\n🛡 Страж: {c.name}\n❤️ {c.hp}/{c.max_hp} | ⚔️ {c.attack_min}-{c.attack_max}"
-    await _reply(update, text, reply_markup=main_menu())
+    kb = main_menu()
+    if char.stat_points > 0:
+        from bot.keyboards import stats_distribution
+        kb = stats_distribution()
+    await _reply(update, text, reply_markup=kb)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -452,6 +460,26 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("Главное меню:", reply_markup=main_menu())
 
 
+async def cb_stat_alloc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    attr_map = {"stat_str": "strength", "stat_agi": "agility", "stat_int": "intelligence"}
+    attr = attr_map.get(query.data)
+    if not attr:
+        await cb_profile(update, context)
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        return
+    ok = char.allocate_stat(attr)
+    if not ok:
+        await query.edit_message_text("Нет очков для распределения.")
+        return
+    await _save_char(char)
+    await cb_profile(update, context)
+
+
 async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -461,17 +489,25 @@ async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     t = char.template
     s = char.stats
+    points_line = ""
+    if char.stat_points > 0:
+        points_line = f"\n📌 **{char.stat_points}** очков для распределения"
     text = (
         f"👤 **{char.name}** — {t.name} | Ур. {char.level}\n"
-        f"✨ Опыт: {char.experience}/{char.exp_to_next}\n"
+        f"✨ Опыт: {char.experience}/{char.exp_to_next}{points_line}\n"
         f"{_char_status_line(char)}\n"
         f"🎯 Крит: {char.crit_chance*100:.1f}% | Уклон: {char.dodge_chance*100:.1f}%\n"
+        f"📊 Сила {s.strength} | Ловк {s.agility} | Инт {s.intelligence}\n\n"
         f"💰 **{char.gold}** золота\n\n"
         f"🗡 Оружие: {_slot_item(char, 'weapon')}\n"
         f"🛡 Броня: {_slot_item(char, 'armor')}\n"
         f"💍 Аксессуар: {_slot_item(char, 'accessory')}"
     )
-    await query.edit_message_text(text, reply_markup=main_menu())
+    kb = main_menu()
+    if char.stat_points > 0:
+        from bot.keyboards import stats_distribution
+        kb = stats_distribution()
+    await query.edit_message_text(text, reply_markup=kb)
 
 
 async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -989,23 +1025,40 @@ async def _handle_player_turn(
             def_=session.active_buffs.get("def", 0),
         )
 
+    weapon_name = ""
+    weapon_attrs = []
+    if char.equipment.weapon:
+        weapon_name = char.equipment.weapon.name
+        weapon_attrs = char.equipment.weapon.attributes
+
+    s = char.stats
+    player_info = {
+        "name": char.name, "class": char.class_key,
+        "hp": char.hp, "max_hp": char.max_hp,
+        "weapon": f"{weapon_name} ({', '.join(weapon_attrs)})" if weapon_name else "",
+        "strength": s.strength, "agility": s.agility, "intelligence": s.intelligence,
+    }
+
     async def _nn(mode, **kw):
         return await call_narrative_api(
             location=session.location_key, turn=enc.turn,
-            player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
+            player=player_info,
             enemies=[{"name": enc.enemy_template["name"], "hp": enemy.hp, "max_hp": enc.enemy_max_hp}],
             action_history=[], player_action=text, mode=mode, **kw,
         )
 
+    attribute = "strength"
     try:
         nn = await _nn("player_modifiers")
         player_mods = nn.get("actions") if nn else None
+        if nn and "attribute" in nn:
+            attribute = nn["attribute"]
     except Exception:
         log.exception("NN player_modifiers failed")
         player_mods = None
 
     try:
-        player_attack = resolve_player_turn(char, enemy, enc, player_mods)
+        player_attack = resolve_player_turn(char, enemy, enc, player_mods, attribute=attribute)
     except Exception as e:
         log.exception("resolve_player_turn failed")
         await update.message.reply_text(f"❌ Ошибка боя: {e}")
@@ -1409,12 +1462,18 @@ async def cb_inv_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     eff = item.effect
     parts = []
-    if eff.atk_bonus: parts.append(f"⚔️ Атака +{eff.atk_bonus}")
+    if eff.strength_bonus: parts.append(f"💪 Сила +{eff.strength_bonus}")
+    if eff.agility_bonus: parts.append(f"🏃 Ловкость +{eff.agility_bonus}")
+    if eff.intelligence_bonus: parts.append(f"🧠 Интеллект +{eff.intelligence_bonus}")
     if eff.defense_bonus: parts.append(f"🛡 Защита +{eff.defense_bonus}")
     if eff.hp_bonus: parts.append(f"❤️ HP +{eff.hp_bonus}")
     if eff.crit_chance_bonus: parts.append(f"🎯 Крит +{eff.crit_chance_bonus*100:.0f}%")
     if eff.crit_multiplier_bonus: parts.append(f"🗡 Крит.множитель +{eff.crit_multiplier_bonus:.1f}")
     if eff.dodge_bonus: parts.append(f"💨 Уклон +{eff.dodge_bonus*100:.0f}%")
+    if item.attributes:
+        from core.weapon_gen import get_attributes_descriptions
+        descs = get_attributes_descriptions({"attributes": item.attributes})
+        parts.append(f"🔰 {', '.join(descs)}")
     if parts:
         text += "\n" + "\n".join(parts)
     await query.edit_message_text(text, reply_markup=item_actions_kb(item_uid))
@@ -1699,7 +1758,7 @@ async def cmd_set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not char:
         return
     char.level = max(1, min(lvl, 50))
-    char._recalc_stats()
+    char.max_hp = char._calc_max_hp()
     char.hp = char.max_hp
     await _save_char(char)
     await _reply(update, f"✅ {char.name}: уровень {char.level}, HP восстановлено.")
@@ -1806,6 +1865,8 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(cb_raid_cancel_action, pattern=r"^raid_cancel_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_next, pattern=r"^raid_next$"))
     app.add_handler(CallbackQueryHandler(cb_raid_leave, pattern=r"^raid_leave$"))
+
+    app.add_handler(CallbackQueryHandler(cb_stat_alloc, pattern=r"^stat_(str|agi|int)$"))
 
     app.add_handler(CallbackQueryHandler(cb_inv_page, pattern=r"^inv_page_"))
     app.add_handler(CallbackQueryHandler(cb_inv_item, pattern=r"^inv_item_"))

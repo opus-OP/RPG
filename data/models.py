@@ -23,6 +23,7 @@ def item_to_dict(item: Item) -> dict:
         "template_name": item.template.name,
         "durability": item.durability,
         "durability_max": item.durability_max,
+        "attributes": item.attributes,
     }
     td = item.template
     d["template_data"] = {
@@ -31,7 +32,6 @@ def item_to_dict(item: Item) -> dict:
         "rarity": td.rarity.value,
         "base_effect": {
             "hp_bonus": td.base_effect.hp_bonus,
-            "atk_bonus": td.base_effect.atk_bonus,
             "crit_chance_bonus": td.base_effect.crit_chance_bonus,
             "crit_multiplier_bonus": td.base_effect.crit_multiplier_bonus,
             "defense_bonus": td.base_effect.defense_bonus,
@@ -62,7 +62,6 @@ def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[I
             rarity=Rarity(td["rarity"]),
             base_effect=ItemEffect(
                 hp_bonus=td["base_effect"].get("hp_bonus", 0),
-                atk_bonus=td["base_effect"].get("atk_bonus", 0),
                 crit_chance_bonus=td["base_effect"].get("crit_chance_bonus", 0.0),
                 crit_multiplier_bonus=td["base_effect"].get("crit_multiplier_bonus", 0.0),
                 defense_bonus=td["base_effect"].get("defense_bonus", 0),
@@ -82,6 +81,7 @@ def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[I
         uid=data["uid"],
         durability=data.get("durability", tpl.durability_max),
         durability_max=data.get("durability_max", tpl.durability_max),
+        attributes=data.get("attributes", []),
     )
 
 
@@ -149,6 +149,8 @@ def character_to_dict(char: Character) -> dict:
         "owner_tg_id": char.owner_tg_id,
         "name": char.name,
         "class_key": char.class_key,
+        "base_stats": {"strength": char.base_stats.strength, "agility": char.base_stats.agility, "intelligence": char.base_stats.intelligence},
+        "stat_points": char.stat_points,
         "description": char.description,
         "level": char.level,
         "experience": char.experience,
@@ -168,10 +170,19 @@ def character_to_dict(char: Character) -> dict:
 
 
 def character_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Character:
+    from core.classes import StatBlock
+    bs = data.get("base_stats", {})
+    base_stats = StatBlock(
+        strength=bs.get("strength", 0),
+        agility=bs.get("agility", 0),
+        intelligence=bs.get("intelligence", 0),
+    )
     char = Character(
         owner_tg_id=data["owner_tg_id"],
         name=data["name"],
         class_key=data["class_key"],
+        base_stats=base_stats,
+        stat_points=data.get("stat_points", 0),
         description=data.get("description", ""),
         level=data.get("level", 1),
         experience=data.get("experience", 0),

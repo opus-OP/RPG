@@ -289,11 +289,13 @@ def create_enemy(enc: RaidEncounter) -> _Enemy:
 def resolve_player_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     nn_modifiers: Optional[list[dict]],
+    attribute: str = "strength",
 ) -> AttackResult:
     atk, enc.active_effects = resolve_turn(
         attacker=character, defender=enemy,
         is_player_attacker=True, turn_number=enc.turn,
         active_effects=enc.active_effects, nn_modifiers=nn_modifiers,
+        attribute=attribute,
     )
     enc.enemy_hp = enemy.hp
     return atk
@@ -305,10 +307,12 @@ def resolve_companion_turn(
     if not character.companion or not character.companion.alive:
         return None
     comp = character.companion
+    owner_stat = character.stats.intelligence
     atk, _ = resolve_turn(
         attacker=comp, defender=enemy,
         is_player_attacker=True, turn_number=enc.turn,
         active_effects={}, nn_modifiers=None,
+        attribute="intelligence",
     )
     enc.enemy_hp = enemy.hp
     return atk
@@ -337,6 +341,7 @@ def resolve_enemy_turn(
         attacker=enemy, defender=character,
         is_player_attacker=False, turn_number=enc.turn,
         active_effects=enc.active_effects, nn_modifiers=None,
+        attribute="strength",
     )
     enemy.attack_min, enemy.attack_max = atk_min_saved, atk_max_saved
 
@@ -345,63 +350,6 @@ def resolve_enemy_turn(
             enc.active_effects, atk_damage_type, atk.final_damage,
         )
     return atk
-
-
-def process_encounter_turn(
-    session: RaidSession,
-    character: Character,
-    nn_modifiers: Optional[list[dict]] = None,
-    enemy_nn_modifiers: Optional[list[dict]] = None,
-) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
-    """Обрабатывает один раунд боя для всех участников согласно инициативе.
-
-    Args:
-        session: Текущая рейд-сессия.
-        character: Персонаж-участник.
-        nn_modifiers: Модификаторы от NN для атаки игрока.
-        enemy_nn_modifiers: Модификаторы от NN для атаки врага.
-
-    Returns:
-        (player_attack, enemy_attack, companion_attack, finished)
-    """
-    enc = session.encounters[session.current_encounter]
-    enc.turn += 1
-    enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
-
-    if session.active_buffs:
-        character.set_buffs(
-            atk=session.active_buffs.get("atk", 0),
-            def_=session.active_buffs.get("def", 0),
-        )
-
-    order = enc.initiative_order
-    if not order:
-        order = ["player", "companion", "enemy"]
-
-    player_attack: Optional[AttackResult] = None
-    companion_attack: Optional[AttackResult] = None
-    enemy_attack: Optional[AttackResult] = None
-
-    for actor in order:
-        if enc.finished:
-            break
-        if actor == "player":
-            player_attack = resolve_player_turn(character, enemy, enc, nn_modifiers)
-            if enemy.hp <= 0:
-                enc.finished = True
-        elif actor == "companion":
-            companion_attack = resolve_companion_turn(character, enemy, enc)
-            if enemy.hp <= 0:
-                enc.finished = True
-        elif actor == "enemy":
-            enemy_attack = resolve_enemy_turn(character, enemy, enc, enemy_nn_modifiers)
-            if character.hp <= 0:
-                enc.finished = True
-
-    if session.active_buffs:
-        character.clear_buffs()
-
-    return player_attack, enemy_attack, companion_attack, enc.finished
 
 
 # ─── Multiplayer turn system ────────────────────────────────

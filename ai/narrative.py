@@ -24,7 +24,7 @@ MODIFIER_TARGET_HINT = (
 
 MODIFIER_EXAMPLE = (
     '\nПример для player_modifiers:\n'
-    '{"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}]}'
+    '{"attribute": "strength", "actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}]}'
 )
 
 ENEMY_MODIFIER_EXAMPLE = (
@@ -35,8 +35,9 @@ ENEMY_MODIFIER_EXAMPLE = (
 SYSTEM_PROMPTS: dict[str, str] = {
     "player_modifiers": (
         "Ты — нарратор RPG-боя.\n\n"
-        "Верни ТОЛЬКО JSON с полем \"actions\" — список модификаторов для атаки игрока.\n"
-        "Пустой список, если модификаторы не нужны.\n\n"
+        'Верни ТОЛЬКО JSON с полями "attribute" и "actions":\n'
+        '- "attribute": какой атрибут использует игрок в этой атаке — "strength", "agility" или "intelligence". Выбирай исходя из описания действия и характеристик оружия.\n'
+        '- "actions": список модификаторов для атаки игрока (пустой список, если не нужны).\n\n'
         "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_TARGET_HINT
         + 'WEAK_SPOT_FOUND, CRIT_BOOST, DODGE_BONUS, TAUNT — обычно target: "player" (накладываются на игрока).\n'
         + 'STUN — всегда target: "enemy".\n'
@@ -88,8 +89,14 @@ def _build_context(
         f"Ход: {turn}\n\n"
         f"Игрок: {player.get('name', '?')} ({player.get('class', '?')}) "
         f"— HP {player.get('hp', '?')}/{player.get('max_hp', '?')}\n"
-        f"Враги:\n"
     )
+    weapon_info = player.get("weapon", "")
+    if weapon_info:
+        ctx += f"Оружие: {weapon_info}\n"
+    stats_info = player.get("stats", "")
+    if stats_info:
+        ctx += f"Сила {player.get('strength','?')} | Ловк {player.get('agility','?')} | Инт {player.get('intelligence','?')}\n"
+    ctx += "Враги:\n"
     for i, e in enumerate(enemies, 1):
         ctx += f"  {i}. {e.get('name', '?')} — HP {e.get('hp', '?')}/{e.get('max_hp', '?')}\n"
     ctx += f"\nИстория действий: {', '.join(action_history) or 'начало боя'}\n"
@@ -187,7 +194,12 @@ async def call_narrative_api(
             if key in ("actions", "enemy_actions"):
                 raw_list = parsed.get(key, [])
                 validated = validate_nn_response({"actions": raw_list}, key=key, check_narrative=False)
-                return {key: validated}
+                result = {key: validated}
+                if mode == "player_modifiers" and "attribute" in parsed:
+                    attr = parsed["attribute"]
+                    if attr in ("strength", "agility", "intelligence"):
+                        result["attribute"] = attr
+                return result
             else:
                 text_val = parsed.get(key, "")
                 return {key: text_val}
