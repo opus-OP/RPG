@@ -248,7 +248,11 @@ def create_raid(
 # ─── Обработка ходов ────────────────────────────────────────
 
 
-def _resolve_player_turn(
+def create_enemy(enc: RaidEncounter) -> _Enemy:
+    return _Enemy(enc.enemy_template, enc.enemy_hp)
+
+
+def resolve_player_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     nn_modifiers: Optional[list[dict]],
 ) -> AttackResult:
@@ -261,7 +265,7 @@ def _resolve_player_turn(
     return atk
 
 
-def _resolve_companion_turn(
+def resolve_companion_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
 ) -> Optional[AttackResult]:
     if not character.companion or not character.companion.alive:
@@ -276,7 +280,7 @@ def _resolve_companion_turn(
     return atk
 
 
-def _resolve_enemy_turn(
+def resolve_enemy_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     enemy_nn_modifiers: Optional[list[dict]],
 ) -> AttackResult:
@@ -342,15 +346,15 @@ def process_encounter_turn(
         if enc.finished:
             break
         if actor == "player":
-            player_attack = _resolve_player_turn(character, enemy, enc, nn_modifiers)
+            player_attack = resolve_player_turn(character, enemy, enc, nn_modifiers)
             if enemy.hp <= 0:
                 enc.finished = True
         elif actor == "companion":
-            companion_attack = _resolve_companion_turn(character, enemy, enc)
+            companion_attack = resolve_companion_turn(character, enemy, enc)
             if enemy.hp <= 0:
                 enc.finished = True
         elif actor == "enemy":
-            enemy_attack = _resolve_enemy_turn(character, enemy, enc, enemy_nn_modifiers)
+            enemy_attack = resolve_enemy_turn(character, enemy, enc, enemy_nn_modifiers)
             if character.hp <= 0:
                 enc.finished = True
 

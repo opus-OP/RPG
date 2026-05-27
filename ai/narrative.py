@@ -1,12 +1,3 @@
-"""Модуль нейросетевого нарратива.
-
-OpenAI-совместимый API (routerai.ru) генерирует художественное описание боя.
-NN получает структурированные данные (JSON) и возвращает ТОЛЬКО:
-  - Текстовое описание (player_narrative, enemy_narrative)
-  - Список модификаторов (действий) в строгом формате
-Все расчёты урона остаются на серверной стороне.
-"""
-
 from __future__ import annotations
 import json
 import logging
@@ -15,53 +6,65 @@ from typing import Any, Optional
 import httpx
 
 import config
-from utils.validators import validate_nn_response, ALLOWED_MODIFIERS
+from utils.validators import validate_nn_response
 
 log = logging.getLogger("rpg.nn")
 
-SYSTEM_PROMPT = (
-    "Ты — нарратор RPG-боя. Описывай происходящее ярко, живо, на русском языке.\n\n"
-    "Правила:\n"
-    "1. Верни ТОЛЬКО JSON-объект, без лишнего текста.\n"
-    "2. Поле \"player_narrative\" (str): описание действия игрока в этом ходу.\n"
-    "3. Поле \"enemy_narrative\" (str): описание ответного действия врага в этом ходу. "
-    "Если враг убит — опиши его гибель.\n"
-    "4. Поле \"actions\" (list): модификаторы для атаки игрока. "
-    "Можешь вернуть пустой список, если ничего не применяешь.\n"
-    "5. Поле \"enemy_actions\" (list): модификаторы для ответной атаки врага. "
-    "Можешь вернуть пустой список, если ничего не применяешь.\n\n"
-    "Доступные модификаторы (actions / enemy_actions):\n"
+MODIFIER_LIST = (
+    "- WEAK_SPOT_FOUND: множитель урона (0.3–2.0, <1 ослабление)\n"
+    "- DODGE_BONUS: бонус к уклонению (0.0–0.3)\n"
+    "- STUN: враг пропускает ход\n"
+    "- CRIT_BOOST: гарантированный крит\n"
+    "- TAUNT: щит (value × 30 ед.)\n"
 )
 
-MODIFIER_DESCRIPTIONS = {
-    "WEAK_SPOT_FOUND": '{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"} — модификатор урона x1.5 (value 0.3–2.0, <1 = ослабление)',
-    "DODGE_BONUS": '{"modifier": "DODGE_BONUS", "value": 0.15, "target": "player"} — уклонение +15% (value 0.0–0.3)',
-    "STUN": '{"modifier": "STUN", "value": 1.0, "target": "enemy"} — враг пропускает ход',
-    "CRIT_BOOST": '{"modifier": "CRIT_BOOST", "value": 1.0, "target": "player"} — гарантированный крит',
-    "TAUNT": '{"modifier": "TAUNT", "value": 0.5, "target": "player"} — щит (value × 30 ед.)',
+MODIFIER_EXAMPLE = (
+    '\nПример:\n'
+    '{"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}]}'
+)
+
+SYSTEM_PROMPTS: dict[str, str] = {
+    "player_modifiers": (
+        "Ты — нарратор RPG-боя.\n\n"
+        "Верни ТОЛЬКО JSON с полем \"actions\" — список модификаторов для атаки игрока.\n"
+        "Пустой список, если модификаторы не нужны.\n\n"
+        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_EXAMPLE
+    ),
+    "player_narrative": (
+        "Ты — нарратор RPG-боя. Опиши действие игрока ярко и живо.\n\n"
+        "Верни ТОЛЬКО JSON с полем \"player_narrative\" — описание атаки игрока.\n"
+        "Учитывай нанесённый урон: если урон 0 — опиши промах/блок.\n"
+    ),
+    "enemy_modifiers": (
+        "Ты — нарратор RPG-боя.\n\n"
+        "Верни ТОЛЬКО JSON с полем \"enemy_actions\" — список модификаторов для атаки врага.\n"
+        "Пустой список, если модификаторы не нужны.\n\n"
+        "Доступные модификаторы:\n" + MODIFIER_LIST + MODIFIER_EXAMPLE.replace("actions", "enemy_actions")
+    ),
+    "enemy_narrative": (
+        "Ты — нарратор RPG-боя. Опиши ответное действие врага ярко и живо.\n\n"
+        "Верни ТОЛЬКО JSON с полем \"enemy_narrative\" — описание атаки врага.\n"
+        "Учитывай нанесённый урон: если урон 0 — опиши промах/блок.\n"
+    ),
 }
 
-for line in MODIFIER_DESCRIPTIONS.values():
-    SYSTEM_PROMPT += f"   - {line}\n"
-
-SYSTEM_PROMPT += (
-    "\nПример ответа:\n"
-    '{"player_narrative": "Вы замечаете брешь в защите врага и наносите точный удар!", '
-    '"enemy_narrative": "Враг в ярости бросается на вас, целясь в горло.", '
-    '"actions": [{"modifier": "WEAK_SPOT_FOUND", "value": 1.5, "target": "player"}], '
-    '"enemy_actions": [{"modifier": "TAUNT", "value": 0.5, "target": "enemy"}]}'
-)
+MODE_KEY_MAP: dict[str, str] = {
+    "player_modifiers": "actions",
+    "player_narrative": "player_narrative",
+    "enemy_modifiers": "enemy_actions",
+    "enemy_narrative": "enemy_narrative",
+}
 
 
-def _build_messages(
+def _build_context(
     location: str,
     turn: int,
     player: dict,
     enemies: list[dict],
     action_history: list[str],
     player_action: str = "",
-) -> list[dict[str, str]]:
-    """Формирует сообщения для запроса к NN: system + user context."""
+    damage: Optional[int] = None,
+) -> str:
     ctx = (
         f"Локация: {location}\n"
         f"Ход: {turn}\n\n"
@@ -74,14 +77,32 @@ def _build_messages(
     ctx += f"\nИстория действий: {', '.join(action_history) or 'начало боя'}\n"
     if player_action:
         ctx += f"\nДействие игрока: {player_action}\n"
+    if damage is not None:
+        ctx += f"Нанесённый урон: {damage}\n"
+    return ctx
+
+
+def _build_messages(
+    mode: str,
+    location: str,
+    turn: int,
+    player: dict,
+    enemies: list[dict],
+    action_history: list[str],
+    player_action: str = "",
+    damage: Optional[int] = None,
+) -> list[dict[str, str]]:
+    sys_prompt = SYSTEM_PROMPTS.get(mode)
+    if not sys_prompt:
+        sys_prompt = SYSTEM_PROMPTS["player_modifiers"]
+    ctx = _build_context(location, turn, player, enemies, action_history, player_action, damage)
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": sys_prompt},
         {"role": "user", "content": ctx},
     ]
 
 
 def _parse_json_response(text: str) -> Optional[dict]:
-    """Извлекает JSON из ответа NN (убирает маркдаун-блоки ```)."""
     text = text.strip()
     if text.startswith("```"):
         lines = text.splitlines()
@@ -102,32 +123,27 @@ async def call_narrative_api(
     player: dict,
     enemies: list[dict],
     action_history: Optional[list[str]] = None,
+    *,
     player_action: str = "",
+    damage: Optional[int] = None,
+    mode: str = "player_modifiers",
 ) -> Optional[dict[str, Any]]:
-    """Вызывает API нейросети для генерации описания боя.
-
-    Делает до NN_MAX_RETRIES попыток с таймаутом NN_TIMEOUT.
-    При неудаче возвращает fallback-ответ без модификаторов.
-
-    Returns:
-        Словарь с ключами: player_narrative, enemy_narrative, actions, enemy_actions.
-        None при критической ошибке.
-    """
     if action_history is None:
         action_history = []
 
     if not config.NN_API_URL:
-        log.warning("NN_API_URL not set, using fallback narrative")
-        return fallback_response()
+        log.warning("NN_API_URL not set")
+        return None
 
     url = config.NN_API_URL.rstrip("/")
     if not url.endswith("/chat/completions"):
         url += "/chat/completions"
 
+    key = MODE_KEY_MAP.get(mode, "actions")
     headers = {"Authorization": f"Bearer {config.NN_API_KEY}", "Content-Type": "application/json"}
     body = {
         "model": config.NN_MODEL,
-        "messages": _build_messages(location, turn, player, enemies, action_history, player_action),
+        "messages": _build_messages(mode, location, turn, player, enemies, action_history, player_action, damage),
         "temperature": 0.8,
         "max_tokens": 512,
     }
@@ -149,25 +165,22 @@ async def call_narrative_api(
             if parsed is None:
                 log.warning("NN response not JSON (attempt %d/%d): %.200s", attempt, config.NN_MAX_RETRIES, content)
                 continue
-            data["player_narrative"] = parsed.get("player_narrative", "")
-            data["enemy_narrative"] = parsed.get("enemy_narrative", "")
-            data["actions"] = parsed.get("actions", [])
-            data["enemy_actions"] = parsed.get("enemy_actions", [])
-            validated_actions = validate_nn_response(data, key="actions", check_narrative=False)
-            validated_enemy = validate_nn_response(data, key="enemy_actions", check_narrative=False)
-            return {
-                "player_narrative": data["player_narrative"],
-                "enemy_narrative": data["enemy_narrative"],
-                "actions": validated_actions,
-                "enemy_actions": validated_enemy,
-            }
+
+            if key in ("actions", "enemy_actions"):
+                raw_list = parsed.get(key, [])
+                validated = validate_nn_response({"actions": raw_list}, key=key, check_narrative=False)
+                return {key: validated}
+            else:
+                text_val = parsed.get(key, "")
+                return {key: text_val}
+
         except httpx.TimeoutException:
             log.warning("NN API timeout (attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
         except httpx.RequestError as e:
             log.warning("NN API error: %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
 
-    log.error("NN API failed after %d attempts, using fallback", config.NN_MAX_RETRIES)
-    return fallback_response()
+    log.error("NN API failed after %d attempts", config.NN_MAX_RETRIES)
+    return None
 
 
 def _extract_error(resp) -> str:
@@ -178,18 +191,7 @@ def _extract_error(resp) -> str:
 
 
 def _extract_content(data: dict) -> Optional[str]:
-    """Извлекает текст ответа из структуры OpenAI-совместимого API."""
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return None
-
-
-def fallback_response() -> dict[str, Any]:
-    """Резервный ответ без модификаторов при недоступности API."""
-    return {
-        "player_narrative": "Вы продолжаете атаку.",
-        "enemy_narrative": "Враг отвечает ударом.",
-        "actions": [],
-        "enemy_actions": [],
-    }

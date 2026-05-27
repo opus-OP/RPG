@@ -21,7 +21,7 @@ from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PE
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS, get_location
-from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidStatus, session_to_dict, session_from_dict
+from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
@@ -252,29 +252,76 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data.pop("raid_action_pending", None)
         enc = session.encounters[session.current_encounter]
-        nn_data = await call_narrative_api(
-            location=session.location_key,
-            turn=enc.turn,
-            player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
-            enemies=[{"name": enc.enemy_template["name"], "hp": enc.enemy_hp, "max_hp": enc.enemy_max_hp}],
-            action_history=[],
-            player_action=text,
-        )
-        player_attack, enemy_attack, companion_attack, finished = await _do_turn(
-            update, context, char, session,
-            nn_modifiers=nn_data.get("actions") if nn_data else None,
-            enemy_nn_modifiers=nn_data.get("enemy_actions") if nn_data else None,
-            reply_to=update.message,
-        )
-        if player_attack is None:
+        enc.turn += 1
+        enemy = create_enemy(enc)
+
+        async def _nn(mode, **kw):
+            return await call_narrative_api(
+                location=session.location_key, turn=enc.turn,
+                player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
+                enemies=[{"name": enc.enemy_template["name"], "hp": enemy.hp, "max_hp": enc.enemy_max_hp}],
+                action_history=[], player_action=text, mode=mode, **kw,
+            )
+
+        # ── Phase 1: player modifiers ──
+        try:
+            nn = await _nn("player_modifiers")
+            player_mods = nn.get("actions") if nn else None
+        except Exception:
+            log.exception("NN player_modifiers failed")
+            player_mods = None
+
+        try:
+            player_attack = resolve_player_turn(char, enemy, enc, player_mods)
+        except Exception as e:
+            log.exception("resolve_player_turn failed")
+            await update.message.reply_text(f"❌ Ошибка боя: {e}")
             return
+
+        companion_attack = resolve_companion_turn(char, enemy, enc)
+
+        # ── Phase 2: player narrative (with damage) ──
+        try:
+            nn = await _nn("player_narrative", damage=player_attack.final_damage if player_attack else 0)
+            player_narrative = nn.get("player_narrative", "") if nn else "Вы атакуете."
+        except Exception:
+            log.exception("NN player_narrative failed")
+            player_narrative = "Вы атакуете."
+
+        enemy_killed = enemy.hp <= 0
+        if enemy_killed:
+            enc.finished = True
+            enemy_attack = None
+            enemy_narrative = ""
+        else:
+            # ── Phase 3: enemy modifiers ──
+            try:
+                nn = await _nn("enemy_modifiers")
+                enemy_mods = nn.get("enemy_actions") if nn else None
+            except Exception:
+                log.exception("NN enemy_modifiers failed")
+                enemy_mods = None
+
+            # ── Phase 4: enemy narrative (with damage) ──
+            try:
+                enemy_attack = resolve_enemy_turn(char, enemy, enc, enemy_mods)
+            except Exception as e:
+                log.exception("resolve_enemy_turn failed")
+                await update.message.reply_text(f"❌ Ошибка боя: {e}")
+                return
+
+            try:
+                nn = await _nn("enemy_narrative", damage=enemy_attack.final_damage if enemy_attack else 0)
+                enemy_narrative = nn.get("enemy_narrative", "") if nn else "Враг атакует в ответ."
+            except Exception:
+                log.exception("NN enemy_narrative failed")
+                enemy_narrative = "Враг атакует в ответ."
+
+        finished = enemy_killed or char.hp <= 0
 
         await _save_session(context, session)
         total = len(session.encounters)
         cur = session.current_encounter + 1
-
-        player_narrative = (nn_data or {}).get("player_narrative", "")
-        enemy_narrative = (nn_data or {}).get("enemy_narrative", "")
 
         async def send_result(kb):
             msg = await update.message.reply_text(
@@ -286,7 +333,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["raid_msg_id"] = msg.message_id
             return msg
 
-        # ─── Build action log in initiative order ───
         header = _encounter_header(cur, total, enc, char)
         action_parts = []
         order = enc.initiative_order or ["player", "companion", "enemy"]
@@ -314,7 +360,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         combat_log = "\n".join(action_parts)
         full_text = f"{header}\n\n{combat_log}"
 
-        # ─── Final / continue ───
         if finished:
             char.count_raid += 1
             if char.hp <= 0:
@@ -328,7 +373,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _save_char(char)
                 _cleanup_raid(context)
                 await send_result(raid_failed())
-            elif enc.enemy_hp <= 0:
+            elif enemy_killed:
                 enc.finished = True
                 full_text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
                 if session.current_encounter + 1 >= len(session.encounters):
