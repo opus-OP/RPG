@@ -720,8 +720,7 @@ async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.get("status") != "pending":
             continue
         sid = row["raid_id"]
-        # code is stored separately — we need a lookup. Use simple convention: code = raid_id
-        if sid == code:
+        if sid.upper() == code:
             target = row
             break
     if not target:
