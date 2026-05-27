@@ -66,6 +66,7 @@ class Location:
         min/max_enemies: Количество врагов за рейд.
         mob_ids: Список ID мобов, населяющих локацию.
         enemies: Разрешённые шаблоны (заполняется при загрузке).
+        events: Ивенты между энкаунтерами.
         drop_rates: Параметры дропа.
     """
     key: str
@@ -80,6 +81,7 @@ class Location:
     gold_max: int
     exp_reward: int
     drop_rates: DropRates
+    events: list[dict] = field(default_factory=list)
     enemies: list[MobTemplate] = field(default_factory=list)
 
 
@@ -117,6 +119,7 @@ def _load_all():
             mob_ids=loc["mobs"],
             gold_min=loc["gold_min"], gold_max=loc["gold_max"],
             exp_reward=loc["exp_reward"], drop_rates=drop_rates,
+            events=loc.get("events", []),
         )
         for mid in loc["mobs"]:
             if mid in _mob_db:

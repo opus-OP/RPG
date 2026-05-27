@@ -1,5 +1,5 @@
 {
-  "$schema": "Локации. mobs — список ID мобов из mobs.json. drop_rates — шансы выпадения оружия по редкости.",
+  "$schema": "Локации. mobs — список ID мобов из mobs.json. events — ивенты между энкаунтерами.",
   "locations": {
     "forest": {
       "name": "Тёмный лес",
@@ -20,7 +20,14 @@
           "EPIC": 4,
           "LEGENDARY": 1
         }
-      }
+      },
+      "events": [
+        {"id": "forest_fallen_tree", "text": "Путь преграждает упавшее дерево. Можно попробовать разобрать завал.", "attribute": "strength", "dc": 10, "success": {"gold": 30}, "fail": {"damage": 10}},
+        {"id": "forest_hidden_cache", "text": "Вы замечаете что-то блестящее в кустах.", "attribute": "intelligence", "dc": 12, "success": {"gold": 40, "item_template": "Кольцо выносливости"}, "fail": {"damage": 10}},
+        {"id": "forest_wolf_pack", "text": "Стая волков рыщет неподалёку. Нужно быстро забраться на дерево.", "attribute": "agility", "dc": 10, "success": {}, "fail": {"damage": 15}},
+        {"id": "forest_healing_spring", "text": "Вы находите родник с чистой водой.", "attribute": null, "dc": 50, "success": {"heal": 25}, "fail": {}},
+        {"id": "forest_herb_garden", "text": "Поляна с редкими травами. Знание трав поможет собрать ценное.", "attribute": "intelligence", "dc": 11, "success": {"heal": 30, "gold": 15}, "fail": {}}
+      ]
     },
     "caves": {
       "name": "Каменные пещеры",
@@ -41,7 +48,14 @@
           "EPIC": 15,
           "LEGENDARY": 5
         }
-      }
+      },
+      "events": [
+        {"id": "caves_collapse", "text": "Туннель обвалился — нужно разобрать завал.", "attribute": "strength", "dc": 12, "success": {"gold": 50}, "fail": {"damage": 20}},
+        {"id": "caves_crystal_vein", "text": "Вы видите жилу редких кристаллов.", "attribute": "intelligence", "dc": 13, "success": {"gold": 70, "item_template": "Каменная броня"}, "fail": {"damage": 15}},
+        {"id": "caves_deep_chasm", "text": "Перед вами глубокая расщелина. Нужно перепрыгнуть.", "attribute": "agility", "dc": 12, "success": {"gold": 40}, "fail": {"damage": 25}},
+        {"id": "caves_glowing_shrooms", "text": "Пещера светится странными грибами.", "attribute": null, "dc": 40, "success": {"heal": 35}, "fail": {}},
+        {"id": "caves_miner_cache", "text": "Старый тайник шахтёров.", "attribute": "intelligence", "dc": 14, "success": {"gold": 60, "buff_def": 3}, "fail": {"damage": 10}}
+      ]
     },
     "dungeon": {
       "name": "Забытое подземелье",
@@ -62,7 +76,14 @@
           "EPIC": 30,
           "LEGENDARY": 15
         }
-      }
+      },
+      "events": [
+        {"id": "dungeon_trap_floor", "text": "Плита под ногой уходит вниз! Нужно удержать равновесие.", "attribute": "agility", "dc": 14, "success": {"gold": 30}, "fail": {"damage": 30}},
+        {"id": "dungeon_armory", "text": "Комната с древним оружием на стенах.", "attribute": "intelligence", "dc": 15, "success": {"gold": 50, "item_template": "Проклятый клинок"}, "fail": {"damage": 20}},
+        {"id": "dungeon_soul_drain", "text": "Тёмная аура высасывает жизненные силы.", "attribute": null, "dc": 35, "success": {"buff_atk": 4, "gold": 30}, "fail": {"damage": 25}},
+        {"id": "dungeon_crumbling_statue", "text": "Статуя оживает и нападает! Держите оборону!", "attribute": "strength", "dc": 15, "success": {"gold": 70}, "fail": {"damage": 35}},
+        {"id": "dungeon_hidden_library", "text": "Тайная библиотека с магическими свитками.", "attribute": "intelligence", "dc": 16, "success": {"heal": 50, "gold": 40}, "fail": {"damage": 15}}
+      ]
     },
     "volcano": {
       "name": "Вулканические недра",
@@ -83,7 +104,14 @@
           "EPIC": 40,
           "LEGENDARY": 30
         }
-      }
+      },
+      "events": [
+        {"id": "volcano_lava_river", "text": "Поток лавы преграждает путь. Нужно перепрыгнуть.", "attribute": "agility", "dc": 16, "success": {"gold": 80}, "fail": {"damage": 40}},
+        {"id": "volcano_ember_chest", "text": "Сундук, охваченный пламенем. Сбить огонь и открыть!", "attribute": "strength", "dc": 15, "success": {"gold": 100, "item_template": "Амулет тролля"}, "fail": {"damage": 30}},
+        {"id": "volcano_fire_spirits", "text": "Огненные духи кружат вокруг. Нужно найти тропу.", "attribute": "intelligence", "dc": 17, "success": {"buff_atk": 6, "gold": 60}, "fail": {"damage": 35}},
+        {"id": "volcano_cooling_vent", "text": "Расщелина с прохладным воздухом из глубин.", "attribute": null, "dc": 40, "success": {"heal": 50}, "fail": {}},
+        {"id": "volcano_dragon_cache", "text": "Сокровищница дракона! Но вход охраняет магическая печать.", "attribute": "intelligence", "dc": 18, "success": {"gold": 150, "item_template": "Корона смерти"}, "fail": {"damage": 40}}
+      ]
     },
     "frost_tomb": {
       "name": "Ледяная гробница",
@@ -104,7 +132,14 @@
           "EPIC": 35,
           "LEGENDARY": 25
         }
-      }
+      },
+      "events": [
+        {"id": "frost_tomb_ice_bridge", "text": "Ледяной мост через пропасть. Нужно пройти, не поскользнувшись.", "attribute": "agility", "dc": 15, "success": {"gold": 60}, "fail": {"damage": 30}},
+        {"id": "frost_tomb_frozen_chest", "text": "Сундук во льду. Разбить лёд силой!", "attribute": "strength", "dc": 14, "success": {"gold": 80, "item_template": "Плащ теней"}, "fail": {"damage": 20}},
+        {"id": "frost_tomb_rune_door", "text": "Дверь с древними рунами. Нужно расшифровать.", "attribute": "intelligence", "dc": 16, "success": {"gold": 70, "buff_def": 4}, "fail": {"damage": 25}},
+        {"id": "frost_tomb_frozen_fountain", "text": "Замёрзший фонтан. Подо льдом чистая вода.", "attribute": null, "dc": 45, "success": {"heal": 40}, "fail": {}},
+        {"id": "frost_tomb_cursed_coffin", "text": "Гроб с чёрной меткой. Открыть или нет?", "attribute": "intelligence", "dc": 15, "success": {"gold": 90, "buff_atk": 5}, "fail": {"damage": 35}}
+      ]
     }
   }
 }

@@ -89,6 +89,8 @@ class RaidSession:
     total_gold: int = 0
     group_id: Optional[str] = None
     participant_names: dict[int, str] = field(default_factory=dict)
+    active_buffs: dict[str, int] = field(default_factory=dict)
+    used_event_ids: set[str] = field(default_factory=set)
 
 
 # ─── Сериализация для хранения в БД ─────────────────────────
@@ -141,6 +143,8 @@ def session_to_dict(session: RaidSession) -> dict:
         "total_gold": session.total_gold,
         "group_id": session.group_id,
         "participant_names": session.participant_names,
+        "active_buffs": session.active_buffs,
+        "used_event_ids": list(session.used_event_ids),
         "encounters": [raid_encounter_to_dict(e) for e in session.encounters],
     }
 
@@ -155,6 +159,8 @@ def session_from_dict(data: dict) -> RaidSession:
         total_gold=data.get("total_gold", 0),
         group_id=data.get("group_id"),
         participant_names=data.get("participant_names", {}),
+        active_buffs=data.get("active_buffs", {}),
+        used_event_ids=set(data.get("used_event_ids", [])),
         encounters=[raid_encounter_from_dict(e) for e in data.get("encounters", [])],
     )
 
@@ -334,6 +340,12 @@ def process_encounter_turn(
     enc.turn += 1
     enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
 
+    if session.active_buffs:
+        character.set_buffs(
+            atk=session.active_buffs.get("atk", 0),
+            def_=session.active_buffs.get("def", 0),
+        )
+
     order = enc.initiative_order
     if not order:
         order = ["player", "companion", "enemy"]
@@ -357,6 +369,9 @@ def process_encounter_turn(
             enemy_attack = resolve_enemy_turn(character, enemy, enc, enemy_nn_modifiers)
             if character.hp <= 0:
                 enc.finished = True
+
+    if session.active_buffs:
+        character.clear_buffs()
 
     return player_attack, enemy_attack, companion_attack, enc.finished
 

@@ -93,8 +93,18 @@ class Character:
     count_raid: int = 0
 
     def __post_init__(self):
+        self._buff_atk = 0
+        self._buff_def = 0
         if self.hp == 0 and self.max_hp == 0:
             self._recalc_stats()
+
+    def set_buffs(self, atk: int = 0, def_: int = 0):
+        self._buff_atk = atk
+        self._buff_def = def_
+
+    def clear_buffs(self):
+        self._buff_atk = 0
+        self._buff_def = 0
 
     @property
     def template(self) -> ClassTemplate:
@@ -113,14 +123,14 @@ class Character:
         t = self.template
         base = t.base_atk_min + t.atk_per_level * (self.level - 1)
         item_bonus = self._item_stat("atk_bonus")
-        return base + item_bonus
+        return base + item_bonus + self._buff_atk
 
     @property
     def attack_max(self) -> int:
         t = self.template
         base = t.base_atk_max + t.atk_per_level * (self.level - 1)
         item_bonus = self._item_stat("atk_bonus")
-        return base + item_bonus
+        return base + item_bonus + self._buff_atk
 
     @property
     def crit_chance(self) -> float:
@@ -136,7 +146,7 @@ class Character:
 
     @property
     def defense(self) -> int:
-        return self._item_stat("defense_bonus")
+        return self._item_stat("defense_bonus") + self._buff_def
 
     @property
     def dodge_chance(self) -> float:
