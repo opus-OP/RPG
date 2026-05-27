@@ -216,6 +216,19 @@ class Storage:
             return json.loads(row["data"])
         return None
 
+    async def find_pending_raid_by_code(self, code: str) -> Optional[tuple[str, dict]]:
+        cursor = await self._conn.execute("SELECT raid_id, data FROM raids")
+        rows = await cursor.fetchall()
+        code_upper = code.upper()
+        for row in rows:
+            data = json.loads(row["data"])
+            if data.get("status") != "pending":
+                continue
+            sid = row["raid_id"]
+            if sid.upper() == code_upper:
+                return (row["raid_id"], data)
+        return None
+
     async def delete_raid_session(self, raid_id: str):
         await self._conn.execute("DELETE FROM raids WHERE raid_id = ?", (raid_id,))
         await self._conn.commit()

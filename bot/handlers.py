@@ -731,52 +731,49 @@ async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         await _reply(update, "Использование: /join <код>")
         return
-    code = args[0].upper()
-    cursor = await storage._conn.execute("SELECT raid_id, data FROM raids")
-    rows = await cursor.fetchall()
-    target = None
-    for row in rows:
-        data = json.loads(row["data"])
-        if data.get("status") != "pending":
-            continue
-        sid = row["raid_id"]
-        if sid.upper() == code:
-            target = row
-            break
-    if not target:
-        await _reply(update, f"Рейд с кодом `{code}` не найден или уже начался.")
-        return
-
+    code = args[0]
     uid = update.effective_user.id
     char = await _get_char(uid, context)
     if not char:
+        await _reply(update, "У вас нет персонажа. Сначала создайте: /create")
         return
     if not char.can_raid():
-        await _reply(update, "Ваш персонаж не может участвовать (кулдаун).")
+        rem = char.raid_cooldown_remaining()
+        hrs = int(rem // 3600)
+        mins = int((rem % 3600) // 60)
+        await _reply(update, f"⏳ До следующего рейда {hrs}ч {mins}м.")
         return
 
-    data = json.loads(target["data"])
+    try:
+        result = await storage.find_pending_raid_by_code(code)
+    except Exception as e:
+        log.exception("find_pending_raid_by_code crashed")
+        await _reply(update, "❌ Ошибка при поиске рейда. Попробуйте позже.")
+        return
+
+    if not result:
+        await _reply(update, f"Рейд с кодом `{code}` не найден или уже начался.")
+        return
+
+    raid_id, data = result
     participants = data.get("participant_names", {})
-    if uid in participants:
+    if str(uid) in participants:
         await _reply(update, "Вы уже в этом рейде.")
         return
     if len(participants) >= 4:
         await _reply(update, "В рейде уже 4 игрока — максимум.")
         return
 
-    participants[uid] = char.name
+    participants[str(uid)] = char.name
     data["participant_names"] = participants
-    await storage.save_raid_session(target["raid_id"], data)
-    context.user_data["raid_id"] = target["raid_id"]
+    await storage.save_raid_session(raid_id, data)
+    context.user_data["raid_id"] = raid_id
 
     loc_name = get_location(data["location_key"]).name if get_location(data["location_key"]) else "?"
-    part_list = [(int(k), v) for k, v in participants.items()]
-    text = raid_lobby_text(loc_name, target["raid_id"], part_list)
     await _reply(update, f"✅ Вы присоединились к рейду **{loc_name}**!")
     # Notify the owner
     owner_id = int(list(participants.keys())[0])
     try:
-        from telegram.helpers import escape_markdown
         await context.bot.send_message(
             owner_id,
             f"👤 {char.name} присоединился к рейду!",
