@@ -21,7 +21,7 @@ from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PE
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU
 from core.locations import LOCATIONS, get_location
-from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn
+from core.raid import create_raid, process_encounter_turn, generate_loot, distribute_exp_gold, RaidSession, RaidEncounter, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn, build_initiative_order, get_current_turn, advance_turn_core, pick_enemy_target
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
@@ -61,25 +61,27 @@ def _char_status_line(char: Character) -> str:
     return f"❤️ **{char.hp}**/{char.max_hp} | ⚔️ {char.attack_min}-{char.attack_max} | 🛡 {char.defense}"
 
 
-def _initiative_line(enc, char: Character) -> str:
+def _initiative_line(enc, uid: int, char: Character) -> str:
     order = enc.initiative_order
     if not order:
         return ""
-    has_companion = char.companion is not None and char.companion.alive
     icons = {"player": "🧑", "companion": "🛡", "enemy": "👾"}
-    names = {"player": "Вы", "companion": "Страж", "enemy": enc.enemy_template["name"]}
+    current = enc.current_turn_index if enc.initiative_order else 0
     parts = []
-    for who in order:
-        if who == "companion" and not has_companion:
-            continue
-        parts.append(f"{icons.get(who, '❓')}{names.get(who, who)}")
-    if not parts:
-        return ""
+    for i, entry in enumerate(order):
+        icon = icons.get(entry["type"], "❓")
+        name = entry["name"]
+        if entry["type"] == "player" and entry["uid"] == uid:
+            name = "Вы"
+        elif entry["type"] == "companion" and entry["uid"] == uid:
+            name = f"Страж"
+        prefix = "➡️ " if i == current else ""
+        parts.append(f"{prefix}{icon}{name} ({entry['initiative']})")
     return f"⚡ Инициатива: {' → '.join(parts)}"
 
 
-def _encounter_header(cur: int, total: int, enc, char: Character) -> str:
-    header = f"⚔️ Рейд {cur}/{total}\n{_initiative_line(enc, char)}\n\n"
+def _encounter_header(cur: int, total: int, enc, char: Character, uid: int = 0) -> str:
+    header = f"⚔️ Рейд {cur}/{total}\n{_initiative_line(enc, uid, char)}\n\n"
     header += f"{_enemy_status_line(enc)}\n\n"
     header += _char_status_line(char)
     if char.companion and char.companion.alive:
@@ -229,7 +231,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if state and state["step"] == "class":
-        await update.message.reply_text("Выберите класс кнопкой выше ☝️")
         return
 
     if state and state["step"] == "companion_name":
@@ -243,178 +244,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _finish_creation(update, context, state)
         return
 
-    raid_pending = context.user_data.get("raid_action_pending")
-    if raid_pending:
-        session = await _get_session(context)
-        if not session or session.status != RaidStatus.IN_PROGRESS:
-            context.user_data.pop("raid_action_pending", None)
-            await update.message.reply_text("Рейд уже завершён.")
-            return
-        char = await _get_char(uid, context)
-        if not char:
-            context.user_data.pop("raid_action_pending", None)
-            return
-        context.user_data.pop("raid_action_pending", None)
+    session = await _get_session(context)
+    if session and session.status == RaidStatus.IN_PROGRESS:
         enc = session.encounters[session.current_encounter]
-        enc.turn += 1
-        enemy = create_enemy(enc)
-
-        if session.active_buffs:
-            char.set_buffs(
-                atk=session.active_buffs.get("atk", 0),
-                def_=session.active_buffs.get("def", 0),
-            )
-
-        async def _nn(mode, **kw):
-            return await call_narrative_api(
-                location=session.location_key, turn=enc.turn,
-                player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
-                enemies=[{"name": enc.enemy_template["name"], "hp": enemy.hp, "max_hp": enc.enemy_max_hp}],
-                action_history=[], player_action=text, mode=mode, **kw,
-            )
-
-        # ── Phase 1: player modifiers ──
-        try:
-            nn = await _nn("player_modifiers")
-            player_mods = nn.get("actions") if nn else None
-        except Exception:
-            log.exception("NN player_modifiers failed")
-            player_mods = None
-
-        try:
-            player_attack = resolve_player_turn(char, enemy, enc, player_mods)
-        except Exception as e:
-            log.exception("resolve_player_turn failed")
-            await update.message.reply_text(f"❌ Ошибка боя: {e}")
+        turn = get_current_turn(enc)
+        if turn and turn["type"] == "player" and turn["uid"] == uid:
+            context.user_data.pop("raid_action_pending", None)
+            await _handle_player_turn(update, context, session, uid, text)
             return
-
-        companion_attack = resolve_companion_turn(char, enemy, enc)
-
-        # ── Phase 2: player narrative (with damage) ──
-        try:
-            nn = await _nn("player_narrative", damage=player_attack.final_damage if player_attack else 0)
-            player_narrative = nn.get("player_narrative", "") if nn else "Вы атакуете."
-        except Exception:
-            log.exception("NN player_narrative failed")
-            player_narrative = "Вы атакуете."
-
-        enemy_killed = enemy.hp <= 0
-        if enemy_killed:
-            enc.finished = True
-            enemy_attack = None
-            enemy_narrative = ""
-        else:
-            # ── Phase 3: enemy modifiers ──
-            try:
-                nn = await _nn("enemy_modifiers")
-                enemy_mods = nn.get("enemy_actions") if nn else None
-            except Exception:
-                log.exception("NN enemy_modifiers failed")
-                enemy_mods = None
-
-            # ── Phase 4: enemy narrative (with damage) ──
-            try:
-                enemy_attack = resolve_enemy_turn(char, enemy, enc, enemy_mods)
-            except Exception as e:
-                log.exception("resolve_enemy_turn failed")
-                await update.message.reply_text(f"❌ Ошибка боя: {e}")
-                return
-
-            try:
-                nn = await _nn("enemy_narrative", damage=enemy_attack.final_damage if enemy_attack else 0)
-                enemy_narrative = nn.get("enemy_narrative", "") if nn else "Враг атакует в ответ."
-            except Exception:
-                log.exception("NN enemy_narrative failed")
-                enemy_narrative = "Враг атакует в ответ."
-
-        if session.active_buffs:
-            char.clear_buffs()
-
-        finished = enemy_killed or char.hp <= 0
-
-        await _save_session(context, session)
-        total = len(session.encounters)
-        cur = session.current_encounter + 1
-
-        async def send_result(kb):
-            msg = await update.message.reply_text(
-                full_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=kb,
-            )
-            context.user_data["raid_msg_chat"] = msg.chat_id
-            context.user_data["raid_msg_id"] = msg.message_id
-            return msg
-
-        header = _encounter_header(cur, total, enc, char)
-        action_parts = []
-        order = enc.initiative_order or ["player", "companion", "enemy"]
-        has_companion = char.companion is not None and char.companion.alive
-        for actor in order:
-            if actor == "companion" and not has_companion:
-                continue
-            if actor == "player":
-                if player_narrative:
-                    action_parts.append(f"📖 {player_narrative}")
-                desc = _attack_desc("Вы", player_attack)
-                if desc:
-                    action_parts.append(desc)
-            elif actor == "companion":
-                desc = _attack_desc("🛡 Страж", companion_attack)
-                if desc:
-                    action_parts.append(desc)
-            elif actor == "enemy":
-                if enemy_narrative:
-                    action_parts.append(f"📖 {enemy_narrative}")
-                desc = _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит")
-                if desc:
-                    action_parts.append(desc)
-
-        combat_log = "\n".join(action_parts)
-        full_text = f"{header}\n\n{combat_log}"
-
-        if finished:
-            char.count_raid += 1
-            if char.hp <= 0:
-                full_text += "\n\n💀 **Вы погибли!**"
-                session.status = RaidStatus.FAILED
-                char.in_raid = False
-                char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
-                char.release_companion()
-                char.alive = True
-                char.hp = char.max_hp
-                await _save_char(char)
-                _cleanup_raid(context)
-                await send_result(raid_failed())
-            elif enemy_killed:
-                enc.finished = True
-                full_text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
-                if session.current_encounter + 1 >= len(session.encounters):
-                    session.status = RaidStatus.COMPLETED
-                    loc = get_location(session.location_key)
-                    if loc:
-                        _cleanup_raid(context)
-                        rewards = await _reward_all_participants(session, loc, context)
-                        my_reward = next((r for r in rewards if r[0] == char.name), None)
-                        loot_text = ""
-                        if my_reward:
-                            loot_text = "\n" + my_reward[1]
-                        full_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
-                        await send_result(raid_done())
-                    else:
-                        full_text += "\n\n⚠️ Ошибка: локация не найдена."
-                        await send_result(main_menu())
-                else:
-                    await _save_char(char)
-                    await send_result(raid_next())
-            else:
-                await _save_char(char)
-                await send_result(raid_actions())
-        else:
-            await _save_char(char)
-            msg = await update.message.reply_text(full_text, reply_markup=raid_actions())
-            context.user_data["raid_msg_chat"] = msg.chat_id
-            context.user_data["raid_msg_id"] = msg.message_id
+        if context.user_data.get("raid_action_pending"):
+            context.user_data.pop("raid_action_pending", None)
+            await update.message.reply_text("Сейчас не ваш ход. Ожидайте.")
+            return
+    elif context.user_data.get("raid_action_pending"):
+        context.user_data.pop("raid_action_pending", None)
+        await update.message.reply_text("Рейд уже завершён.")
         return
 
     sell = context.user_data.get("sell")
@@ -584,7 +428,7 @@ async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     enc = session.encounters[session.current_encounter]
     total = len(session.encounters)
     cur = session.current_encounter + 1
-    msg = await update.message.reply_text(_encounter_header(cur, total, enc, char), reply_markup=raid_actions())
+    msg = await update.message.reply_text(_encounter_header(cur, total, enc, char, update.effective_user.id), reply_markup=raid_actions())
     context.user_data["raid_msg_chat"] = msg.chat_id
     context.user_data["raid_msg_id"] = msg.message_id
 
@@ -776,7 +620,19 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _save_char(char)
     context.user_data["raid"] = session
 
-    await _show_encounter(query, context, char, session)
+    enc = session.encounters[0]
+    chars = {uid: char}
+    enc.initiative_order = build_initiative_order(chars, enc)
+    enc.current_turn_index = 0
+    enc.round_number = 0
+    await _save_session(context, session)
+
+    await query.edit_message_text(
+        f"⚔️ Рейд начался!\n\n"
+        f"👾 **{enc.enemy_template['name']}** ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}\n\n"
+        f"Бросаем инициативу…"
+    )
+    await _advance_turn(context, session)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -906,6 +762,11 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         for enc in session.encounters:
             enc.enemy_hp = int(enc.enemy_hp * (1 + 0.3 * (gs - 1)))
             enc.enemy_max_hp = enc.enemy_hp
+    enc = session.encounters[0]
+    chars = await _get_participant_chars(context, session)
+    enc.initiative_order = build_initiative_order(chars, enc)
+    enc.current_turn_index = 0
+    enc.round_number = 0
     await storage.save_raid_session(raid_id, session_to_dict(session))
 
     # Notify all participants
@@ -915,17 +776,17 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             if char:
                 char.in_raid = True
                 await _save_char(char)
-            enc = session.encounters[0]
             await context.bot.send_message(
                 pid,
                 f"⚔️ Рейд в **{loc.name}** начался!\n\n"
                 f"👾 {enc.enemy_template['name']} ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}",
-                reply_markup=raid_actions(),
             )
         except Exception:
             pass
 
-    await query.edit_message_text("⚔️ Рейд начат! Участники оповещены.")
+    await query.edit_message_text("⚔️ Рейд начат! Бросаем инициативу…")
+    # Start first turn
+    await _advance_turn(context, session)
 
 
 async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1043,17 +904,24 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
     context.user_data["raid_msg_id"] = query.message.message_id
     total = len(session.encounters)
     cur = session.current_encounter + 1
-    await query.edit_message_text(_encounter_header(cur, total, enc, char), reply_markup=raid_actions())
+    uid = query.from_user.id if query.from_user else 0
+    await query.edit_message_text(_encounter_header(cur, total, enc, char, uid), reply_markup=raid_actions())
 
 
 async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    uid = update.effective_user.id
     session = await _get_session(context)
     if not session or session.status != RaidStatus.IN_PROGRESS:
         await query.edit_message_text("Нет активного рейда.", reply_markup=main_menu())
         return
-    char = await _get_char(update.effective_user.id, context)
+    enc = session.encounters[session.current_encounter]
+    turn = get_current_turn(enc)
+    if turn and turn["type"] == "player" and turn["uid"] != uid:
+        await query.edit_message_text("Сейчас не ваш ход. Ожидайте.", reply_markup=raid_actions())
+        return
+    char = await _get_char(uid, context)
     if not char:
         await query.edit_message_text("Персонаж не найден.", reply_markup=main_menu())
         return
@@ -1098,6 +966,255 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return None, None, None, None
 
     return player_attack, enemy_attack, companion_attack, finished
+
+# ─── Multiplayer turn system ─────────────────────────────────
+
+
+async def _handle_player_turn(
+    update: Update, context: ContextTypes.DEFAULT_TYPE,
+    session: RaidSession, uid: int, text: str,
+):
+    """Process one player's turn action and advance."""
+    char = await _get_char(uid, context)
+    if not char:
+        await update.message.reply_text("Персонаж не найден.")
+        return
+    enc = session.encounters[session.current_encounter]
+    enc.turn += 1
+    enemy = create_enemy(enc)
+
+    if session.active_buffs:
+        char.set_buffs(
+            atk=session.active_buffs.get("atk", 0),
+            def_=session.active_buffs.get("def", 0),
+        )
+
+    async def _nn(mode, **kw):
+        return await call_narrative_api(
+            location=session.location_key, turn=enc.turn,
+            player={"name": char.name, "class": char.class_key, "hp": char.hp, "max_hp": char.max_hp},
+            enemies=[{"name": enc.enemy_template["name"], "hp": enemy.hp, "max_hp": enc.enemy_max_hp}],
+            action_history=[], player_action=text, mode=mode, **kw,
+        )
+
+    try:
+        nn = await _nn("player_modifiers")
+        player_mods = nn.get("actions") if nn else None
+    except Exception:
+        log.exception("NN player_modifiers failed")
+        player_mods = None
+
+    try:
+        player_attack = resolve_player_turn(char, enemy, enc, player_mods)
+    except Exception as e:
+        log.exception("resolve_player_turn failed")
+        await update.message.reply_text(f"❌ Ошибка боя: {e}")
+        return
+
+    try:
+        nn = await _nn("player_narrative", damage=player_attack.final_damage if player_attack else 0)
+        player_narrative = nn.get("player_narrative", "") if nn else "Вы атакуете."
+    except Exception:
+        log.exception("NN player_narrative failed")
+        player_narrative = "Вы атакуете."
+
+    if session.active_buffs:
+        char.clear_buffs()
+
+    await _save_char(char)
+
+    total = len(session.encounters)
+    cur = session.current_encounter + 1
+    header = _encounter_header(cur, total, enc, char, uid)
+    lines = [header, ""]
+    if player_narrative:
+        lines.append(f"📖 {player_narrative}")
+    desc = _attack_desc("Вы", player_attack)
+    if desc:
+        lines.append(desc)
+
+    if char.hp <= 0:
+        lines.append("\n💀 **Вы погибли от ран!**")
+        char.count_raid += 1
+        char.in_raid = False
+        char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
+        char.release_companion()
+        char.alive = True
+        char.hp = char.max_hp
+        await _save_char(char)
+        if len(session.participant_names) <= 1:
+            session.status = RaidStatus.FAILED
+            _cleanup_raid(context)
+            await update.message.reply_text("\n".join(lines), reply_markup=raid_failed())
+        else:
+            await update.message.reply_text("\n".join(lines))
+            advance_turn_core(enc)
+            await _advance_turn(context, session)
+        return
+
+    if enemy.hp <= 0:
+        enc.finished = True
+        lines.append(f"\n✅ {enc.enemy_template['name']} повержен!")
+        full = "\n".join(lines)
+        await update.message.reply_text(full)
+        await _encounter_ended(context, session, enc, query=None, msg_text=full)
+        return
+
+    session.turn_pending_uid = None
+    await _save_session(context, session)
+    await update.message.reply_text("\n".join(lines))
+
+    advance_turn_core(enc)
+    await _advance_turn(context, session)
+
+
+async def _get_participant_chars(context, session: RaidSession) -> dict[int, Character]:
+    """Load all participant characters for a raid session."""
+    chars = {}
+    for uid_str in session.participant_names:
+        uid = int(uid_str)
+        c = await _get_char(uid, context)
+        if c:
+            chars[uid] = c
+    return chars
+
+
+async def _resolve_auto_turn(
+    context, session: RaidSession, enc: RaidEncounter,
+    entry: dict, enemy_obj,
+) -> Optional[str]:
+    """Auto-resolve companion or enemy turn. Returns description text or None."""
+    if entry["type"] == "companion":
+        owner_uid = entry["uid"]
+        owner_char = await _get_char(owner_uid, context)
+        if not owner_char or not owner_char.companion or not owner_char.companion.alive:
+            return None
+        atk = resolve_companion_turn(owner_char, enemy_obj, enc)
+        await _save_char(owner_char)
+        if enc.enemy_hp <= 0:
+            enc.finished = True
+        return _attack_desc(f"🛡 Страж {owner_char.name}", atk)
+
+    elif entry["type"] == "enemy":
+        alive = []
+        chars = await _get_participant_chars(context, session)
+        for c_uid, c in chars.items():
+            if c.alive and c.hp > 0:
+                alive.append((c_uid, c))
+        if not alive:
+            return None
+        import random as _random
+        target_uid, target_char = _random.choice(alive)
+        atk = resolve_enemy_turn(target_char, enemy_obj, enc, None)
+        died = target_char.hp <= 0
+        if died:
+            target_char.count_raid += 1
+            target_char.in_raid = False
+            target_char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
+            target_char.release_companion()
+            target_char.alive = True
+            target_char.hp = target_char.max_hp
+        await _save_char(target_char)
+        desc = _attack_desc(f"👾 {entry['name']}", atk, "наносит")
+        if desc:
+            death = " 💀" if died else ""
+            return f"🎯 **{target_char.name}**: {desc}{death}"
+    return None
+
+
+async def _advance_turn(context, session: RaidSession):
+    """Advance initiative and process auto-turns until a player's turn or round end."""
+    enc = session.encounters[session.current_encounter]
+    enemy_obj = create_enemy(enc)
+    parts = []
+
+    while not enc.finished:
+        turn = get_current_turn(enc)
+        if not turn:
+            break
+
+        if turn["type"] == "player":
+            session.turn_pending_uid = turn["uid"]
+            await _save_session(context, session)
+            notif = _build_turn_notification(session, enc, turn)
+            try:
+                await context.bot.send_message(turn["uid"], notif, reply_markup=raid_actions())
+            except Exception:
+                pass
+            break
+
+        text = await _resolve_auto_turn(context, session, enc, turn, enemy_obj)
+        if text:
+            parts.append(text)
+
+        if enc.finished:
+            break
+
+        advance_turn_core(enc)
+
+    if parts:
+        total = len(session.encounters)
+        cur = session.current_encounter + 1
+        header = _encounter_header(cur, total, enc, list(session.participant_names.values())[0], 0)
+        full = f"{header}\n\n" + "\n".join(parts)
+        await _notify_participants(context, session, full, raid_actions())
+
+    if enc.finished:
+        await _encounter_ended(context, session, enc, query=None)
+    else:
+        await _save_session(context, session)
+
+
+def _build_turn_notification(session: RaidSession, enc: RaidEncounter, turn: dict) -> str:
+    """Build the 'your turn' notification for a player."""
+    name = turn.get("name", "Игрок")
+    mob_name = enc.enemy_template["name"]
+    hp_perc = int(enc.enemy_hp / max(enc.enemy_max_hp, 1) * 100)
+    bar = "▓" * (hp_perc // 10) + "░" * (10 - hp_perc // 10)
+    return (
+        f"⚔️ **Раунд {enc.round_number + 1} — ваш ход, {name}!**\n\n"
+        f"👾 {mob_name} ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}\n{bar}\n\n"
+        f"✏️ Напишите, что делает ваш персонаж."
+    )
+
+
+async def _encounter_ended(
+    context, session: RaidSession, enc: RaidEncounter,
+    query=None, msg_text: str = "",
+):
+    """Handle encounter completion (enemy killed). Single player death does NOT fail raid."""
+    await _save_session(context, session)
+    enemy_dead = enc.enemy_hp <= 0
+
+    if enemy_dead:
+        session.current_encounter += 1
+        if session.current_encounter >= len(session.encounters):
+            session.status = RaidStatus.COMPLETED
+            loc = get_location(session.location_key)
+            if loc:
+                _cleanup_raid(context)
+                rewards = await _reward_all_participants(session, loc, context)
+                loot_lines = ["🏆 **Рейд пройден!**"]
+                for rname, rtext in rewards:
+                    loot_lines.append(f"• {rname}: {rtext}")
+                text = "\n".join(loot_lines)
+                if query:
+                    await query.edit_message_text(msg_text + f"\n\n{text}", reply_markup=raid_done())
+                else:
+                    await _notify_participants(context, session, text, raid_done())
+            else:
+                err = "⚠️ Ошибка: локация не найдена."
+                if query:
+                    await query.edit_message_text(err, reply_markup=main_menu())
+        else:
+            if query:
+                await query.edit_message_text(msg_text, reply_markup=raid_next())
+            else:
+                await _notify_participants(context, session, "✅ Враг повержен!", raid_next())
+        return
+
+    await _save_session(context, session)
+
 
 # ═══════════════════════════════════════════════════════════════
 # Callback: рейд — следующий враг
@@ -1216,7 +1333,25 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if event_text:
         await query.edit_message_text(event_text, reply_markup=raid_next())
         return
-    await _show_encounter(query, context, char, session)
+
+    # Build initiative order for the new encounter
+    chars = await _get_participant_chars(context, session)
+    if not chars:
+        chars = {uid: char}
+    enc = session.encounters[session.current_encounter]
+    enc.initiative_order = build_initiative_order(chars, enc)
+    enc.current_turn_index = 0
+    enc.round_number = 0
+    await _save_session(context, session)
+
+    loc_name = get_location(session.location_key).name if get_location(session.location_key) else "?"
+    mob_name = enc.enemy_template["name"]
+    await query.edit_message_text(
+        f"⚔️ **{loc_name}** — новый противник!\n\n"
+        f"👾 **{mob_name}** ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}\n\n"
+        f"Бросаем инициативу…"
+    )
+    await _advance_turn(context, session)
 
 # ═══════════════════════════════════════════════════════════════
 # Callback: рейд — сбежать

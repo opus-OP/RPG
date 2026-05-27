@@ -68,7 +68,9 @@ class RaidEncounter:
     turn: int = 0
     active_effects: dict[str, list[StatusEffectInstance]] = field(default_factory=dict)
     finished: bool = False
-    initiative_order: list[str] = field(default_factory=list)
+    initiative_order: list[dict] = field(default_factory=list)
+    current_turn_index: int = 0
+    round_number: int = 0
 
 
 @dataclass
@@ -91,6 +93,7 @@ class RaidSession:
     participant_names: dict[int, str] = field(default_factory=dict)
     active_buffs: dict[str, int] = field(default_factory=dict)
     used_event_ids: set[str] = field(default_factory=set)
+    turn_pending_uid: Optional[int] = None
 
 
 # ─── Сериализация для хранения в БД ─────────────────────────
@@ -115,6 +118,8 @@ def raid_encounter_to_dict(enc: RaidEncounter) -> dict:
         },
         "finished": enc.finished,
         "initiative_order": enc.initiative_order,
+        "current_turn_index": enc.current_turn_index,
+        "round_number": enc.round_number,
     }
 
 
@@ -130,6 +135,8 @@ def raid_encounter_from_dict(d: dict) -> RaidEncounter:
         },
         finished=d.get("finished", False),
         initiative_order=d.get("initiative_order", []),
+        current_turn_index=d.get("current_turn_index", 0),
+        round_number=d.get("round_number", 0),
     )
 
 
@@ -145,6 +152,7 @@ def session_to_dict(session: RaidSession) -> dict:
         "participant_names": session.participant_names,
         "active_buffs": session.active_buffs,
         "used_event_ids": list(session.used_event_ids),
+        "turn_pending_uid": session.turn_pending_uid,
         "encounters": [raid_encounter_to_dict(e) for e in session.encounters],
     }
 
@@ -161,6 +169,7 @@ def session_from_dict(data: dict) -> RaidSession:
         participant_names=data.get("participant_names", {}),
         active_buffs=data.get("active_buffs", {}),
         used_event_ids=set(data.get("used_event_ids", [])),
+        turn_pending_uid=data.get("turn_pending_uid"),
         encounters=[raid_encounter_from_dict(e) for e in data.get("encounters", [])],
     )
 
@@ -180,11 +189,33 @@ def roll_initiative(stat_value: int) -> int:
     return secure_randint(1, 20) + stat_value // 5
 
 
-def _initiative_order(player_init: int, enemy_init: int) -> list[str]:
-    """Определяет порядок ходов в раунде."""
-    if enemy_init > player_init:
-        return ["enemy", "player", "companion"]
-    return ["player", "companion", "enemy"]
+def build_initiative_order(
+    characters: dict[int, Character],
+    enc: RaidEncounter,
+) -> list[dict]:
+    """Бросает инициативу для всех участников и врага, возвращает сортированный список.
+
+    Каждая запись: {"type":"player"|"companion"|"enemy", "uid":int|str,
+                     "name":str, "initiative":int}
+    Для игроков uid — tg id, для компаньонов — uid владельца,
+    для врага — "enemy".
+    Компаньон идёт сразу после своего владельца.
+    """
+    entries = []
+    for uid, char in characters.items():
+        init = roll_initiative(char.stats.agility)
+        entries.append({"type": "player", "uid": uid, "name": char.name, "initiative": init})
+        if char.companion and char.companion.alive:
+            entries.append({
+                "type": "companion", "uid": uid,
+                "name": f"Страж {char.name}", "initiative": init,
+            })
+    mob = enc.enemy_template
+    enemy_init = roll_initiative(int(mob.get("dodge_chance", 0) * 100))
+    entries.append({"type": "enemy", "uid": "enemy", "name": mob["name"], "initiative": enemy_init})
+
+    entries.sort(key=lambda e: (-e["initiative"], 0 if e["type"] != "enemy" else 1))
+    return entries
 
 
 def create_raid(
@@ -217,8 +248,6 @@ def create_raid(
                 "description": mob.attack_secondary.description,
                 "damage_type": mob.attack_secondary.damage_type,
             }
-        player_init = roll_initiative(character.stats.agility)
-        enemy_init = roll_initiative(mob.dodge_chance * 100)
         encounters.append(RaidEncounter(
             enemy_hp=generate_enemy_hp({"hp": mob.hp}),
             enemy_max_hp=mob.hp,
@@ -234,7 +263,6 @@ def create_raid(
                 "atk_damage_type": mob.attack.damage_type,
                 "attack_secondary": atk2,
             },
-            initiative_order=_initiative_order(player_init, enemy_init),
         ))
 
     if group_size > 1:
@@ -374,6 +402,40 @@ def process_encounter_turn(
         character.clear_buffs()
 
     return player_attack, enemy_attack, companion_attack, enc.finished
+
+
+# ─── Multiplayer turn system ────────────────────────────────
+
+
+def get_current_turn(enc: RaidEncounter) -> Optional[dict]:
+    """Возвращает текущего актора в инициативе или None."""
+    if not enc.initiative_order or enc.current_turn_index >= len(enc.initiative_order):
+        return None
+    return enc.initiative_order[enc.current_turn_index]
+
+
+def advance_turn_core(enc: RaidEncounter) -> Optional[dict]:
+    """Переходит к следующему актору в порядке инициативы.
+
+    Если раунд завершён — обнуляет индекс и увеличивает номер раунда.
+    Возвращает следующего актора или None.
+    """
+    enc.current_turn_index += 1
+    if enc.current_turn_index >= len(enc.initiative_order):
+        enc.current_turn_index = 0
+        enc.round_number += 1
+    return get_current_turn(enc)
+
+
+def pick_enemy_target(
+    chars: dict[int, Character],
+) -> tuple[int, Character]:
+    """Выбирает случайную живую цель для атаки врага."""
+    alive = [(uid, c) for uid, c in chars.items() if c.alive and c.hp > 0]
+    if not alive:
+        return 0, list(chars.values())[0]
+    import random as _random
+    return _random.choice(alive)
 
 
 # ─── Лут и награды ──────────────────────────────────────────
