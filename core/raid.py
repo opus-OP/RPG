@@ -1,3 +1,9 @@
+"""Рейд-система: создание рейда, обработка ходов, генерация лута.
+
+Рейд — последовательность столкновений (encounters) с мобами.
+Каждое столкновение — пошаговый бой с инициативой.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
@@ -12,6 +18,8 @@ from utils.rng import secure_randint, roll_chance
 
 
 class _Enemy:
+    """Обёртка для моба в бою. Содержит текущее состояние и выбор атаки."""
+
     def __init__(self, data: dict, current_hp: int):
         self.hp = current_hp
         self.max_hp = data["hp"]
@@ -26,6 +34,11 @@ class _Enemy:
         self.attack_secondary: Optional[dict] = data.get("attack_secondary")
 
     def pick_attack(self) -> tuple[int, int, str, str]:
+        """С вероятностью `chance` выбирает secondary-атаку, иначе основную.
+
+        Returns:
+            (damage_min, damage_max, description, damage_type)
+        """
         if self.attack_secondary and roll_chance(self.attack_secondary["chance"]):
             return (
                 self.attack_secondary["damage_min"],
@@ -45,6 +58,10 @@ class RaidStatus(Enum):
 
 @dataclass
 class RaidEncounter:
+    """Одно столкновение с мобом в рейде.
+
+    Хранит состояние боя: HP врага, очерёдность ходов, активные эффекты.
+    """
     enemy_hp: int
     enemy_max_hp: int
     enemy_template: dict
@@ -56,6 +73,11 @@ class RaidEncounter:
 
 @dataclass
 class RaidSession:
+    """Сессия рейда — от создания до завершения.
+
+    Содержит всех участников, последовательность столкновений,
+    накопленный лут и награды.
+    """
     raid_id: str
     location_key: str
     status: RaidStatus = RaidStatus.PENDING
@@ -69,12 +91,15 @@ class RaidSession:
     participant_names: dict[int, str] = field(default_factory=dict)
 
 
+# ─── Сериализация для хранения в БД ─────────────────────────
+
+
 def _effect_to_dict(e: StatusEffectInstance) -> dict:
-    return {"kind": e.kind.value, "remaining": e.remaining, "damage_per_tick": e.damage_per_tick}
+    return {"kind": e.kind.value, "remaining": e.duration, "damage_per_tick": e.value}
 
 
 def _effect_from_dict(d: dict) -> StatusEffectInstance:
-    return StatusEffectInstance(StatusEffect(d["kind"]), d["remaining"], d.get("damage_per_tick", 0.0))
+    return StatusEffectInstance(StatusEffect(d["kind"]), d.get("remaining", 1), d.get("damage_per_tick", 0.0))
 
 
 def raid_encounter_to_dict(enc: RaidEncounter) -> dict:
@@ -134,17 +159,23 @@ def session_from_dict(data: dict) -> RaidSession:
     )
 
 
+# ─── Создание рейда ─────────────────────────────────────────
+
+
 def generate_enemy_hp(enemy: dict) -> int:
+    """Генерирует HP врага с небольшим разбросом."""
     base = enemy.get("hp", 50)
     variance = secure_randint(-10, 10)
     return max(10, base + variance)
 
 
 def roll_initiative(stat_value: int) -> int:
+    """Бросок инициативы: 1d20 + stat/5."""
     return secure_randint(1, 20) + stat_value // 5
 
 
 def _initiative_order(player_init: int, enemy_init: int) -> list[str]:
+    """Определяет порядок ходов в раунде."""
     if enemy_init > player_init:
         return ["enemy", "player", "companion"]
     return ["player", "companion", "enemy"]
@@ -157,6 +188,12 @@ def create_raid(
     group_id: Optional[str] = None,
     group_size: int = 1,
 ) -> RaidSession:
+    """Создаёт новую рейд-сессию.
+
+    Генерирует случайное количество врагов из пула локации,
+    определяет инициативу для каждого. Для групп HP врагов
+    масштабируется: +30% за каждого дополнительного участника.
+    """
     if character.class_key == "leader":
         character.summon_companion()
     num_enemies = secure_randint(location.min_enemies, location.max_enemies)
@@ -208,6 +245,9 @@ def create_raid(
     )
 
 
+# ─── Обработка ходов ────────────────────────────────────────
+
+
 def _resolve_player_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     nn_modifiers: Optional[list[dict]],
@@ -240,6 +280,7 @@ def _resolve_enemy_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     enemy_nn_modifiers: Optional[list[dict]],
 ) -> AttackResult:
+    """Разрешает ход врага: выбор атаки, применение NN-модификаторов, наложение статусов."""
     atk_min_saved, atk_max_saved = enemy.attack_min, enemy.attack_max
     atk_min_pick, atk_max_pick, _, atk_damage_type = enemy.pick_attack()
     enemy.attack_min, enemy.attack_max = atk_min_pick, atk_max_pick
@@ -274,6 +315,17 @@ def process_encounter_turn(
     nn_modifiers: Optional[list[dict]] = None,
     enemy_nn_modifiers: Optional[list[dict]] = None,
 ) -> tuple[AttackResult, Optional[AttackResult], Optional[AttackResult], bool]:
+    """Обрабатывает один раунд боя для всех участников согласно инициативе.
+
+    Args:
+        session: Текущая рейд-сессия.
+        character: Персонаж-участник.
+        nn_modifiers: Модификаторы от NN для атаки игрока.
+        enemy_nn_modifiers: Модификаторы от NN для атаки врага.
+
+    Returns:
+        (player_attack, enemy_attack, companion_attack, finished)
+    """
     enc = session.encounters[session.current_encounter]
     enc.turn += 1
     enemy = _Enemy(enc.enemy_template, enc.enemy_hp)
@@ -305,12 +357,20 @@ def process_encounter_turn(
     return player_attack, enemy_attack, companion_attack, enc.finished
 
 
+# ─── Лут и награды ──────────────────────────────────────────
+
+
 def generate_loot(
     location: LocationData,
     enemies_defeated: int,
     character_level: int,
     allowed_classes: list[str],
 ) -> list[Item]:
+    """Генерирует дроп на основе параметров локации.
+
+    Для каждого врага бросается шанс выпадения weapon_chance.
+    Редкость определяется весами rarity_weights локации.
+    """
     items: list[Item] = []
     uid_counter = 0
     rarities: list[str] = []
@@ -353,6 +413,13 @@ def apply_mob_status_effects(
     damage_type: str,
     damage_dealt: int,
 ) -> dict[str, list[StatusEffectInstance]]:
+    """Накладывает статус-эффект на игрока в зависимости от типа атаки моба.
+
+    bleed → BLEED (10% урона/ход, 3 хода)
+    poison → POISON (6% урона/ход, 3 хода)
+    fire → POISON (8% урона/ход, 3 хода)
+    ice → STUNNED (1 ход)
+    """
     mapping = DAMAGE_TYPE_EFFECTS.get(damage_type)
     if not mapping or damage_dealt <= 0:
         return active_effects
@@ -372,6 +439,7 @@ def distribute_exp_gold(
     location: LocationData,
     participants: list[Character],
 ) -> None:
+    """Распределяет опыт и золото между выжившими участниками."""
     base_exp = location.exp_reward
     base_gold = secure_randint(location.gold_min, location.gold_max)
     per_participant_exp = max(1, base_exp // len(participants))

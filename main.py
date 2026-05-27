@@ -1,3 +1,10 @@
+"""Точка входа в приложение.
+
+Запускает Telegram-бота с python-telegram-bot.
+При старте: подключение к БД, загрузка рынка.
+При остановке: закрытие БД.
+"""
+
 import logging
 
 from telegram.ext import ApplicationBuilder
@@ -15,6 +22,7 @@ log = logging.getLogger("rpg")
 
 
 async def post_init(app):
+    """Инициализация после создания приложения: БД + рынок."""
     await storage.connect()
     await MARKET.load_from_storage(storage)
     log.info(f"БД готова: {storage.db_path}, загружено объявлений: {len(MARKET.listings)}")
@@ -22,6 +30,7 @@ async def post_init(app):
 
 
 async def post_shutdown(app):
+    """Завершение работы: закрытие БД."""
     await storage.close()
     log.info("БД закрыта. До свидания!")
 

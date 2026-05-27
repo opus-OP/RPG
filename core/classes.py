@@ -1,10 +1,16 @@
+"""Шаблоны классов персонажей.
+
+Каждый класс — экземпляр ClassTemplate с фиксированными базовыми параметрами.
+Новые классы добавляются в словарь CLASSES.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Callable
 
 
 @dataclass
 class StatBlock:
+    """Набор основных характеристик: Сила, Ловкость, Интеллект."""
     strength: int = 0
     agility: int = 0
     intelligence: int = 0
@@ -19,6 +25,16 @@ class StatBlock:
 
 @dataclass
 class ClassTemplate:
+    """Неизменяемый шаблон класса персонажа.
+
+    Атрибуты:
+        name: Отображаемое имя (рус.).
+        base_hp: Базовое здоровье (до множителей уровня).
+        base_atk_min/max: Диапазон базовой атаки.
+        base_crit_chance/dodge: Базовые шансы.
+        base_stats: Базовые характеристики.
+        atk_per_level/crit_per_level/dodge_per_level: Прирост за уровень.
+    """
     name: str
     base_hp: int
     base_atk_min: int

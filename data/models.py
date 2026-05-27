@@ -1,9 +1,20 @@
+"""Сериализация объектов в/из dict для хранения в SQLite (JSON-колонки).
+
+Все функции преобразуют dataclass-объекты в JSON-совместимые dict и обратно.
+Поддерживаются два режима восстановления Item:
+  1) По template_name из реестра _ITEM_TEMPLATES (для статических предметов)
+  2) Из template_data (для сгенерированного оружия, отсутствующего в реестре)
+"""
+
 import json
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 from core.character import Character, Equipment, Companion
 from core.items import Item, ItemTemplate, ItemEffect, Rarity, ItemType
+
+
+# ─── Item ────────────────────────────────────────────────────
 
 
 def item_to_dict(item: Item) -> dict:
@@ -37,6 +48,11 @@ def item_to_dict(item: Item) -> dict:
 
 
 def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[Item]:
+    """Восстанавливает Item из dict.
+
+    Сначала ищет template_name в реестре templates.
+    Если не найдено — собирает ItemTemplate из template_data.
+    """
     tpl = templates.get(data.get("template_name", ""))
     if not tpl and data.get("template_data"):
         td = data["template_data"]
@@ -69,6 +85,9 @@ def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[I
     )
 
 
+# ─── Equipment ───────────────────────────────────────────────
+
+
 def equipment_to_dict(eq: Equipment) -> dict:
     return {
         "weapon": item_to_dict(eq.weapon) if eq.weapon else None,
@@ -83,6 +102,9 @@ def equipment_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Equip
         armor=item_from_dict(data["armor"], templates) if data.get("armor") else None,
         accessory=item_from_dict(data["accessory"], templates) if data.get("accessory") else None,
     )
+
+
+# ─── Companion ───────────────────────────────────────────────
 
 
 def companion_to_dict(c: Companion) -> dict:
@@ -117,6 +139,9 @@ def companion_from_dict(data: dict) -> Optional[Companion]:
         crit_multiplier=data.get("crit_multiplier", 2.0),
         alive=data.get("alive", True),
     )
+
+
+# ─── Character ───────────────────────────────────────────────
 
 
 def character_to_dict(char: Character) -> dict:
@@ -154,7 +179,10 @@ def character_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Chara
         max_hp=data.get("max_hp", 0),
         gold=data.get("gold", 0),
         equipment=equipment_from_dict(data.get("equipment", {}), templates),
-        inventory=[item_from_dict(i, templates) for i in data.get("inventory", []) if item_from_dict(i, templates) is not None],
+        inventory=[
+            item_from_dict(i, templates) for i in data.get("inventory", [])
+            if item_from_dict(i, templates) is not None
+        ],
         in_raid=data.get("in_raid", False),
         alive=data.get("alive", True),
         companion=companion_from_dict(data.get("companion")),

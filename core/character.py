@@ -1,3 +1,9 @@
+"""Модель персонажа: характеристики, экипировка, компаньон.
+
+Character — центральная сущность, объединяющая класс, уровень,
+экипировку, инвентарь и боевое состояние.
+"""
+
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field
@@ -5,11 +11,18 @@ from typing import Optional
 
 from core.classes import ClassTemplate, StatBlock, CLASSES
 from core.items import Item, ItemEffect, ItemType
-from config import LEVEL_CURVE, MAX_LEVEL, HP_PER_LEVEL_MULT, STAT_PER_LEVEL_MULT, CRIT_CHANCE_MAX, DODGE_MAX, CRIT_MULTIPLIER_BASE
+from config import (
+    LEVEL_CURVE, MAX_LEVEL, HP_PER_LEVEL_MULT, STAT_PER_LEVEL_MULT,
+    CRIT_CHANCE_MAX, DODGE_MAX, CRIT_MULTIPLIER_BASE,
+)
 
 
 @dataclass
 class Companion:
+    """Компаньон класса Лидер — самостоятельная боевая единица.
+
+    Атрибуты обновляются при призыве в зависимости от уровня персонажа.
+    """
     name: str = "Призванный страж"
     description: str = ""
     hp: int = 60
@@ -25,14 +38,17 @@ class Companion:
 
 @dataclass
 class Equipment:
+    """Три слота экипировки: оружие, броня, аксессуар."""
     weapon: Optional[Item] = None
     armor: Optional[Item] = None
     accessory: Optional[Item] = None
 
     def equipped_items(self) -> list[Item]:
+        """Все надетые предметы (не None)."""
         return [i for i in (self.weapon, self.armor, self.accessory) if i is not None]
 
     def total_effect(self) -> ItemEffect:
+        """Суммарный эффект всех надетых предметов."""
         total = ItemEffect()
         for item in self.equipped_items():
             total = total + item.effect
@@ -41,6 +57,22 @@ class Equipment:
 
 @dataclass
 class Character:
+    """Игровой персонаж.
+
+    Атрибуты:
+        owner_tg_id: Telegram ID владельца.
+        name: Уникальное имя персонажа (в рамках владельца).
+        class_key: Ключ класса (warrior/rogue/mage/leader).
+        level/experience: Уровень и опыт.
+        hp/max_hp: Текущее и максимальное здоровье.
+        gold: Валюта.
+        equipment: Экипированные предметы.
+        inventory: Инвентарь (не надетые предметы).
+        in_raid: Флаг активности в рейде.
+        companion: Компаньон (только для Лидера).
+        last_raid_time: Таймстамп окончания последнего рейда.
+        count_raid: Счётчик рейдов (для кулдауна каждые 3).
+    """
     owner_tg_id: int
     name: str
     class_key: str
@@ -69,6 +101,7 @@ class Character:
         return CLASSES[self.class_key]
 
     def _recalc_stats(self):
+        """Пересчитывает max_hp на основе уровня персонажа."""
         t = self.template
         mult = 1.0 + (self.level - 1) * HP_PER_LEVEL_MULT
         self.max_hp = int(t.base_hp * mult)
@@ -114,6 +147,7 @@ class Character:
 
     @property
     def stats(self) -> StatBlock:
+        """Характеристики (Сила/Лов/Инт) с учётом уровня и экипировки."""
         t = self.template
         stat_mult = 1.0 + (self.level - 1) * STAT_PER_LEVEL_MULT
         base = StatBlock(
@@ -125,6 +159,7 @@ class Character:
         return base + item
 
     def _item_stat(self, attr: str) -> int | float:
+        """Суммирует указанный атрибут эффекта со всех надетых предметов."""
         total = 0.0
         for item in self.equipment.equipped_items():
             val = getattr(item.effect, attr, 0.0)
@@ -134,6 +169,7 @@ class Character:
         return int(total) if attr in ("atk_bonus", "defense_bonus", "hp_bonus") else total
 
     def _item_stats(self) -> StatBlock:
+        """Характеристики от экипировки."""
         total = StatBlock()
         for item in self.equipment.equipped_items():
             e = item.effect
@@ -144,12 +180,14 @@ class Character:
 
     @property
     def exp_to_next(self) -> int:
+        """Опыт, необходимый для следующего уровня."""
         if self.level <= len(LEVEL_CURVE) - 1:
             return LEVEL_CURVE[self.level]
         excess = self.level - len(LEVEL_CURVE) + 1
         return int(LEVEL_CURVE[-1] * (1 + excess * 0.3))
 
     def add_experience(self, amount: int) -> bool:
+        """Добавляет опыт, повышает уровень при необходимости. True, если уровень вырос."""
         self.experience += amount
         leveled = False
         while self.experience >= self.exp_to_next and self.level < MAX_LEVEL:
@@ -161,6 +199,7 @@ class Character:
         return leveled
 
     def can_equip(self, item: Item) -> bool:
+        """Проверяет возможность экипировать предмет (уровень, класс, не сломан)."""
         if item.broken:
             return False
         if item.template.required_level > self.level:
@@ -170,6 +209,7 @@ class Character:
         return True
 
     def equip(self, item: Item) -> bool:
+        """Надевает предмет. Снимает старый в тот же слот."""
         if not self.can_equip(item):
             return False
         if item not in self.inventory:
@@ -191,6 +231,7 @@ class Character:
         return True
 
     def unequip(self, item: Item) -> bool:
+        """Снимает предмет в инвентарь."""
         for slot in ("weapon", "armor", "accessory"):
             if getattr(self.equipment, slot) is item:
                 setattr(self.equipment, slot, None)
@@ -200,19 +241,23 @@ class Character:
         return False
 
     def take_damage(self, raw_damage: int) -> int:
+        """Наносит урон, не опуская HP ниже 0."""
         self.hp = max(0, self.hp - raw_damage)
         return raw_damage
 
     def heal(self, amount: int) -> int:
+        """Восстанавливает HP до max_hp. Возвращает реально восстановленное."""
         before = self.hp
         self.hp = min(self.max_hp, self.hp + amount)
         return self.hp - before
 
     def revive(self):
+        """Воскрешает с 1 HP."""
         self.hp = 1
         self.alive = True
 
     def can_raid(self) -> bool:
+        """Проверяет, можно ли начать рейд (кулдаун каждые 3 рейда)."""
         if self.last_raid_time == 0 or self.count_raid % 3 != 0:
             return True
         from config import RAID_COOLDOWN_HOURS
@@ -220,6 +265,7 @@ class Character:
         return elapsed >= RAID_COOLDOWN_HOURS * 3600
 
     def raid_cooldown_remaining(self) -> float:
+        """Оставшееся время кулдауна в секундах."""
         if self.last_raid_time == 0 or self.count_raid % 3 != 0:
             return 0.0
         from config import RAID_COOLDOWN_HOURS
@@ -228,9 +274,11 @@ class Character:
         return max(0.0, remaining)
 
     def mark_raid_done(self):
+        """Фиксирует завершение рейда (таймстамп для кулдауна)."""
         self.last_raid_time = time.time()
 
     def summon_companion(self):
+        """Создаёт компаньона для класса Лидер с параметрами, зависящими от уровня."""
         if self.class_key != "leader":
             self.companion = None
             return
@@ -250,9 +298,11 @@ class Character:
         )
 
     def release_companion(self):
+        """Удаляет компаньона."""
         self.companion = None
 
     def durability_damage_all(self, amount: int = 1, percent: float = 0.0):
+        """Наносит износ всей экипировке. Сломанные предметы автоматически снимаются."""
         for item in self.equipment.equipped_items()[:]:
             dmg = max(1, int(item.durability_max * percent)) if percent > 0 else amount
             item.wear(dmg)

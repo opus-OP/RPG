@@ -1,3 +1,10 @@
+"""Генерация лута: оружие из паттернов.
+
+32 паттерна оружия в weapons.json. Каждый паттерн содержит базовые имена,
+прилагательные, диапазон урона, бонусы и ограничения по классу/уровню.
+Редкость определяет множитель эффектов.
+"""
+
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -13,6 +20,7 @@ _weapon_patterns: list[dict] = []
 
 
 def load_weapon_patterns(path: str | Path = WEAPON_DATA_PATH):
+    """Загружает паттерны оружия из JSON."""
     global _weapon_patterns
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -20,6 +28,7 @@ def load_weapon_patterns(path: str | Path = WEAPON_DATA_PATH):
 
 
 def get_weapon_patterns() -> list[dict]:
+    """Возвращает все паттерны оружия (с ленивой загрузкой)."""
     if not _weapon_patterns:
         load_weapon_patterns()
     return _weapon_patterns
@@ -32,6 +41,7 @@ def find_patterns(
     max_rarity: str = "LEGENDARY",
     allowed_classes: Optional[list[str]] = None,
 ) -> list[dict]:
+    """Фильтрует паттерны по уровню, редкости и классу."""
     patterns = get_weapon_patterns()
     rarity_rank = {"COMMON": 0, "RARE": 1, "EPIC": 2, "LEGENDARY": 3}
     min_rank = rarity_rank.get(min_rarity, 0)
@@ -50,10 +60,12 @@ def find_patterns(
     return matched
 
 
-def roll_weapon_from_pattern(
-    pattern: dict,
-    uid: str,
-) -> Optional[Item]:
+def roll_weapon_from_pattern(pattern: dict, uid: str) -> Optional[Item]:
+    """Создаёт экземпляр Item из паттерна.
+
+    Выбирает случайное имя и прилагательное, генерирует урон в диапазоне.
+    TODO: AI-генерация названия и описания на основе паттерна + локация + моб.
+    """
     rarity_map = {
         "COMMON": Rarity.COMMON,
         "RARE": Rarity.RARE,
@@ -67,11 +79,6 @@ def roll_weapon_from_pattern(
     selected_name = base_names[secure_randint(0, len(base_names) - 1)]
     selected_adj = adjectives[secure_randint(0, len(adjectives) - 1)]
     name = f"{selected_adj} {selected_name}"
-
-    # TODO: AI генерирует название и описание на основе паттерна + локация + моб
-    # ai_name = call_nn_for_name(pattern, location, mob)
-    # ai_description = call_nn_for_description(pattern, location, mob)
-    # Если AI не отвечает — используется шаблонное имя выше
 
     dmg_min = pattern["damage_min"]
     dmg_max = pattern["damage_max"]
@@ -106,6 +113,15 @@ def generate_loot_weapons(
     min_level: int = 0,
     max_level: int = 0,
 ) -> list[Item]:
+    """Генерирует список предметов-лута.
+
+    Аргументы:
+        character_level: Уровень персонажа (для расчёта требуемого уровня).
+        allowed_classes: Какие классы могут использовать (фильтр паттернов).
+        num_rolls: Количество попыток генерации.
+        min/max_rarity: Диапазон редкости.
+        min/max_level: Диапазон уровня предметов.
+    """
     if min_level <= 0 or max_level <= 0:
         min_level = max(1, character_level + WEAPON_MIN_LEVEL_OFFSET)
         max_level = character_level + WEAPON_MAX_LEVEL_OFFSET
@@ -131,6 +147,7 @@ def generate_loot_weapons(
 
 
 def get_attributes_descriptions(pattern: dict) -> list[str]:
+    """Переводит атрибуты оружия в человекочитаемые описания."""
     attr_descriptions = {
         "one_handed": "Одноручное",
         "two_handed": "Двуручное",

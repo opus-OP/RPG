@@ -1,3 +1,12 @@
+"""Модуль нейросетевого нарратива.
+
+OpenAI-совместимый API (routerai.ru) генерирует художественное описание боя.
+NN получает структурированные данные (JSON) и возвращает ТОЛЬКО:
+  - Текстовое описание (player_narrative, enemy_narrative)
+  - Список модификаторов (действий) в строгом формате
+Все расчёты урона остаются на серверной стороне.
+"""
+
 from __future__ import annotations
 import json
 import logging
@@ -52,6 +61,7 @@ def _build_messages(
     action_history: list[str],
     player_action: str = "",
 ) -> list[dict[str, str]]:
+    """Формирует сообщения для запроса к NN: system + user context."""
     ctx = (
         f"Локация: {location}\n"
         f"Ход: {turn}\n\n"
@@ -71,6 +81,7 @@ def _build_messages(
 
 
 def _parse_json_response(text: str) -> Optional[dict]:
+    """Извлекает JSON из ответа NN (убирает маркдаун-блоки ```)."""
     text = text.strip()
     if text.startswith("```"):
         lines = text.splitlines()
@@ -93,6 +104,15 @@ async def call_narrative_api(
     action_history: Optional[list[str]] = None,
     player_action: str = "",
 ) -> Optional[dict[str, Any]]:
+    """Вызывает API нейросети для генерации описания боя.
+
+    Делает до NN_MAX_RETRIES попыток с таймаутом NN_TIMEOUT.
+    При неудаче возвращает fallback-ответ без модификаторов.
+
+    Returns:
+        Словарь с ключами: player_narrative, enemy_narrative, actions, enemy_actions.
+        None при критической ошибке.
+    """
     if action_history is None:
         action_history = []
 
@@ -158,6 +178,7 @@ def _extract_error(resp) -> str:
 
 
 def _extract_content(data: dict) -> Optional[str]:
+    """Извлекает текст ответа из структуры OpenAI-совместимого API."""
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
@@ -165,6 +186,7 @@ def _extract_content(data: dict) -> Optional[str]:
 
 
 def fallback_response() -> dict[str, Any]:
+    """Резервный ответ без модификаторов при недоступности API."""
     return {
         "player_narrative": "Вы продолжаете атаку.",
         "enemy_narrative": "Враг отвечает ударом.",

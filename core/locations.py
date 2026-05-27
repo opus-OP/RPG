@@ -1,3 +1,8 @@
+"""Загрузка и кеширование локаций и мобов из JSON.
+
+Файлы locations.json и mobs.json загружаются однократно при импорте.
+"""
+
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field
@@ -10,6 +15,14 @@ MOBS_JSON = Path(__file__).resolve().parent.parent / "data" / "mobs.json"
 
 @dataclass
 class MobAttack:
+    """Описание атаки моба.
+
+    Атрибуты:
+        type: melee/ranged/magic.
+        damage_type: physical/fire/ice/poison/etc. — влияет на статус-эффекты.
+        damage_min/max: Диапазон урона.
+        chance: Вероятность применения (для secondary-атак).
+    """
     type: str
     damage_type: str
     damage_min: int
@@ -20,6 +33,7 @@ class MobAttack:
 
 @dataclass
 class MobTemplate:
+    """Шаблон моба из mobs.json."""
     id: str
     name: str
     description: str
@@ -34,12 +48,26 @@ class MobTemplate:
 
 @dataclass
 class DropRates:
+    """Параметры дропа локации.
+
+    weapon_chance: Вероятность выпадения оружия с моба.
+    rarity_weights: Веса для каждого уровня редкости.
+    """
     weapon_chance: float
     rarity_weights: dict[str, int]
 
 
 @dataclass
 class Location:
+    """Локация для рейда.
+
+    Атрибуты:
+        key: Уникальный ключ-идентификатор.
+        min/max_enemies: Количество врагов за рейд.
+        mob_ids: Список ID мобов, населяющих локацию.
+        enemies: Разрешённые шаблоны (заполняется при загрузке).
+        drop_rates: Параметры дропа.
+    """
     key: str
     name: str
     description: str
@@ -61,6 +89,7 @@ _loaded = False
 
 
 def _load_all():
+    """Однократная загрузка всех мобов и локаций из JSON."""
     global _loaded, _mob_db, _loc_db
     if _loaded:
         return
@@ -97,21 +126,25 @@ def _load_all():
 
 
 def get_mob(mob_id: str) -> Optional[MobTemplate]:
+    """Возвращает шаблон моба по ID."""
     _load_all()
     return _mob_db.get(mob_id)
 
 
 def get_mobs() -> dict[str, MobTemplate]:
+    """Возвращает всех мобов."""
     _load_all()
     return dict(_mob_db)
 
 
 def get_location(key: str) -> Optional[Location]:
+    """Возвращает локацию по ключу."""
     _load_all()
     return _loc_db.get(key)
 
 
 def get_locations() -> dict[str, Location]:
+    """Возвращает все локации."""
     _load_all()
     return dict(_loc_db)
 

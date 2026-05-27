@@ -1,3 +1,9 @@
+"""SQLite-хранилище для персонажей, объявлений рынка и рейд-сессий.
+
+Использует aiosqlite (async). Все данные сериализуются в JSON-колонки.
+Персонажи и предметы хранятся вместе с template_data для независимости от реестра.
+"""
+
 import json
 import os
 import aiosqlite
@@ -14,6 +20,10 @@ _ITEM_TEMPLATES: dict[str, ItemTemplate] = {}
 
 
 def register_templates():
+    """Регистрирует статические шаблоны предметов (из кода).
+
+    Используется для предметов, создаваемых не через генератор лута.
+    """
     from core.items import ItemTemplate, ItemEffect, Rarity, ItemType
     tpls = [
         ItemTemplate("Деревянный меч", ItemType.WEAPON, Rarity.COMMON, ItemEffect(atk_bonus=2)),
@@ -36,17 +46,28 @@ def get_template(name: str) -> Optional[ItemTemplate]:
 
 
 class Storage:
+    """Асинхронное SQLite-хранилище.
+
+    Использование:
+        storage = Storage()
+        await storage.connect()
+        # ... операции ...
+        await storage.close()
+    """
+
     def __init__(self, db_path: str = ""):
         self.db_path = db_path or str(DATA_DIR / "rpg.db")
         self._conn: Optional[aiosqlite.Connection] = None
 
     async def connect(self):
+        """Открывает соединение и инициализирует таблицы."""
         self._conn = await aiosqlite.connect(self.db_path)
         self._conn.row_factory = aiosqlite.Row
         await self._init_db()
         register_templates()
 
     async def _init_db(self):
+        """Создаёт таблицы, если их нет."""
         await self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS characters (
                 owner_tg_id INTEGER NOT NULL,
@@ -69,7 +90,10 @@ class Storage:
         """)
         await self._conn.commit()
 
+    # ─── Персонажи ───────────────────────────────────────────
+
     async def save_character(self, char: Character):
+        """Сохраняет персонажа (INSERT OR REPLACE)."""
         data = json.dumps(character_to_dict(char), ensure_ascii=False)
         await self._conn.execute(
             "INSERT OR REPLACE INTO characters (owner_tg_id, name, data) VALUES (?, ?, ?)",
@@ -78,6 +102,7 @@ class Storage:
         await self._conn.commit()
 
     async def load_characters(self, owner_tg_id: int) -> list[Character]:
+        """Загружает всех персонажей пользователя."""
         cursor = await self._conn.execute(
             "SELECT data FROM characters WHERE owner_tg_id = ?", (owner_tg_id,)
         )
@@ -107,6 +132,21 @@ class Storage:
         )
         await self._conn.commit()
 
+    async def can_create_character(self, owner_tg_id: int) -> bool:
+        """Проверяет лимит персонажей на пользователя."""
+        count = await self.character_count(owner_tg_id)
+        return count < MAX_CHARACTERS_PER_PLAYER
+
+    async def character_count(self, owner_tg_id: int) -> int:
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) as cnt FROM characters WHERE owner_tg_id = ?",
+            (owner_tg_id,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    # ─── Рынок ───────────────────────────────────────────────
+
     async def save_market_listing(
         self, listing_id: str, seller_id: int, character_name: str,
         item: Item, price: int, active: bool = True,
@@ -119,6 +159,34 @@ class Storage:
             (listing_id, seller_id, character_name, item_data, price, int(active)),
         )
         await self._conn.commit()
+
+    async def deactivate_market_listing(self, listing_id: str):
+        await self._conn.execute(
+            "UPDATE market_listings SET active = 0 WHERE listing_id = ?",
+            (listing_id,),
+        )
+        await self._conn.commit()
+
+    async def load_active_market_listings(self) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM market_listings WHERE active = 1"
+        )
+        rows = await cursor.fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            data["item"] = item_from_dict(json.loads(data["item_data"]), _ITEM_TEMPLATES)
+            result.append(data)
+        return result
+
+    async def credit_gold(self, owner_tg_id: int, character_name: str, amount: int):
+        """Начисляет золото персонажу (продавцу после покупки)."""
+        char = await self.load_character_by_name(owner_tg_id, character_name)
+        if char:
+            char.gold += amount
+            await self.save_character(char)
+
+    # ─── Рейды ───────────────────────────────────────────────
 
     async def save_raid_session(self, raid_id: str, data: dict):
         await self._conn.execute(
@@ -141,6 +209,7 @@ class Storage:
         await self._conn.commit()
 
     async def find_raid_by_participant(self, user_id: int, status: str = "") -> Optional[dict]:
+        """Ищет активную рейд-сессию по ID участника."""
         cursor = await self._conn.execute("SELECT raid_id, data FROM raids")
         rows = await cursor.fetchall()
         for row in rows:
@@ -151,42 +220,7 @@ class Storage:
                         return data
         return None
 
-    async def deactivate_market_listing(self, listing_id: str):
-        await self._conn.execute(
-            "UPDATE market_listings SET active = 0 WHERE listing_id = ?",
-            (listing_id,),
-        )
-        await self._conn.commit()
-
-    async def load_active_market_listings(self) -> list[dict]:
-        cursor = await self._conn.execute(
-            "SELECT * FROM market_listings WHERE active = 1"
-        )
-        rows = await cursor.fetchall()
-        result = []
-        for row in rows:
-            data = dict(row)
-            data["item"] = item_from_dict(json.loads(data["item_data"]), _ITEM_TEMPLATES)
-            result.append(data)
-        return result
-
-    async def credit_gold(self, owner_tg_id: int, character_name: str, amount: int):
-        char = await self.load_character_by_name(owner_tg_id, character_name)
-        if char:
-            char.gold += amount
-            await self.save_character(char)
-
-    async def can_create_character(self, owner_tg_id: int) -> bool:
-        count = await self.character_count(owner_tg_id)
-        return count < MAX_CHARACTERS_PER_PLAYER
-
-    async def character_count(self, owner_tg_id: int) -> int:
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*) as cnt FROM characters WHERE owner_tg_id = ?",
-            (owner_tg_id,),
-        )
-        row = await cursor.fetchone()
-        return row["cnt"] if row else 0
+    # ─── Управление ──────────────────────────────────────────
 
     async def close(self):
         if self._conn:

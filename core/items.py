@@ -1,10 +1,17 @@
+"""Система предметов: шаблоны, редкость, эффекты и экземпляры.
+
+Предмет создаётся из ItemTemplate с учётом множителя редкости.
+Item — конкретный экземпляр с UID, износом и состоянием.
+"""
+
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 
 class Rarity(Enum):
+    """Редкость предмета. Влияет на множитель эффектов."""
     COMMON = "обычный"
     RARE = "редкий"
     EPIC = "эпический"
@@ -12,6 +19,7 @@ class Rarity(Enum):
 
 
 class ItemType(Enum):
+    """Тип предмета, определяющий слот экипировки."""
     WEAPON = "оружие"
     ARMOR = "броня"
     ACCESSORY = "аксессуар"
@@ -19,6 +27,11 @@ class ItemType(Enum):
 
 @dataclass
 class ItemEffect:
+    """Суммарный бонус предмета ко всем характеристикам.
+
+    Каждое поле суммируется с базовыми параметрами персонажа.
+    Для предметов COMMON значения — базовые; редкость умножает их.
+    """
     hp_bonus: int = 0
     atk_bonus: int = 0
     crit_chance_bonus: float = 0.0
@@ -30,6 +43,7 @@ class ItemEffect:
     intelligence_bonus: int = 0
 
     def __add__(self, other: ItemEffect) -> ItemEffect:
+        """Суммирует два набора эффектов (для нескольких экипированных предметов)."""
         return ItemEffect(
             hp_bonus=self.hp_bonus + other.hp_bonus,
             atk_bonus=self.atk_bonus + other.atk_bonus,
@@ -53,6 +67,14 @@ RARITY_EFFECT_MULTIPLIER = {
 
 @dataclass
 class ItemTemplate:
+    """Шаблон предмета — неизменяемая часть, общая для всех экземпляров.
+
+    Атрибуты:
+        name: Название (может содержать префикс для сгенерированного оружия).
+        base_effect: Базовый эффект (до умножения на редкость).
+        required_level/class: Ограничения на экипировку.
+        durability_max: Максимальная прочность.
+    """
     name: str
     item_type: ItemType
     rarity: Rarity
@@ -62,6 +84,7 @@ class ItemTemplate:
     durability_max: int = 100
 
     def final_effect(self) -> ItemEffect:
+        """Возвращает эффект с учётом множителя редкости."""
         mult = RARITY_EFFECT_MULTIPLIER[self.rarity]
         return ItemEffect(
             hp_bonus=int(self.base_effect.hp_bonus * mult),
@@ -78,6 +101,13 @@ class ItemTemplate:
 
 @dataclass
 class Item:
+    """Конкретный экземпляр предмета.
+
+    Атрибуты:
+        template: Ссылка на шаблон.
+        uid: Уникальный идентификатор экземпляра.
+        durability: Текущая прочность (0 = сломан).
+    """
     template: ItemTemplate
     uid: str
     durability: int
@@ -104,4 +134,5 @@ class Item:
         return self.template.final_effect()
 
     def wear(self, amount: int = 1) -> None:
+        """Снижает прочность, но не ниже 0."""
         self.durability = max(0, self.durability - amount)

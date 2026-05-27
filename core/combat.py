@@ -1,3 +1,9 @@
+"""Боевая система: расчёт урона, модификаторы, статус-эффекты.
+
+Ключевое правило: нейросеть НЕ участвует в расчётах.
+Она возвращает модификаторы, которые система применяет к своим формулам.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
@@ -10,6 +16,7 @@ from config import DMG_RANDOM_MIN, DMG_RANDOM_MAX, DODGE_BUFF_AMOUNT, DODGE_MAX
 
 
 class StatusEffect(Enum):
+    """Все возможные временные эффекты в бою."""
     POISON = "poison"
     BLEED = "bleed"
     SHIELD = "shield"
@@ -20,6 +27,13 @@ class StatusEffect(Enum):
 
 @dataclass
 class StatusEffectInstance:
+    """Конкретный экземпляр эффекта на цели.
+
+    Атрибуты:
+        kind: Тип эффекта.
+        duration: Оставшееся количество ходов.
+        value: Сила эффекта (урон тика, поглощение щита и т.д.).
+    """
     kind: StatusEffect
     duration: int
     value: float = 0.0
@@ -27,6 +41,7 @@ class StatusEffectInstance:
 
 @dataclass
 class BattleState:
+    """Состояние одного раунда боя между атакующим и защитником."""
     attacker: Character
     defender: Character
     is_player_attacker: bool
@@ -36,6 +51,16 @@ class BattleState:
 
 @dataclass
 class AttackResult:
+    """Результат одной атаки.
+
+    Атрибуты:
+        raw_damage: Урон до модификаторов.
+        final_damage: Итоговый урон после всех расчётов.
+        is_crit: Был ли крит.
+        is_dodged: Было ли уклонение.
+        modifier_mult: Множитель от NN-модификатора.
+        status_applied: Какой эффект наложен (если есть).
+    """
     raw_damage: int
     final_damage: int
     is_crit: bool
@@ -53,15 +78,22 @@ def calc_damage(
     shield_absorb: float = 0.0,
     dodge_override: float | None = None,
 ) -> AttackResult:
+    """Основная формула расчёта урона.
+
+    Порядок:
+        1. Базовая атака: secure_randint(atk_min, atk_max)
+        2. Проверка уклонения защитника
+        3. Проверка крита атакующего (или guaranteed_crit)
+        4. Урон = base_dmg * modifier_mult * crit_mult - defense + random(-3..3)
+        5. Поглощение щитом
+        6. Результат не ниже 1
+    """
     base_dmg = secure_randint(attacker.attack_min, attacker.attack_max)
     dodge = dodge_override if dodge_override is not None else defender.dodge_chance
     if roll_chance(dodge) and not guaranteed_crit:
         return AttackResult(
-            raw_damage=base_dmg,
-            final_damage=0,
-            is_crit=False,
-            is_dodged=True,
-            modifier_mult=modifier_mult,
+            raw_damage=base_dmg, final_damage=0, is_crit=False,
+            is_dodged=True, modifier_mult=modifier_mult,
         )
     is_crit = guaranteed_crit or roll_chance(attacker.crit_chance)
     advantage = attacker.crit_multiplier if is_crit else 1.0
@@ -72,18 +104,17 @@ def calc_damage(
     if shield_absorb > 0:
         dmg = max(0, dmg - int(shield_absorb))
     return AttackResult(
-        raw_damage=base_dmg,
-        final_damage=dmg,
-        is_crit=is_crit,
-        is_dodged=False,
-        modifier_mult=modifier_mult,
+        raw_damage=base_dmg, final_damage=dmg, is_crit=is_crit,
+        is_dodged=False, modifier_mult=modifier_mult,
     )
 
 
-def apply_nn_modifiers(
-    state: BattleState,
-    modifiers: list[dict],
-) -> None:
+def apply_nn_modifiers(state: BattleState, modifiers: list[dict]) -> None:
+    """Применяет модификаторы от нейросети к атаке игрока.
+
+    Каждый модификатор добавляет временный эффект к соответствующей стороне.
+    Здесь не происходит расчёта урона — только наложение статусов.
+    """
     for mod in modifiers:
         modifier = mod.get("modifier", "")
         value = mod.get("value", 1.0)
@@ -107,11 +138,12 @@ def apply_nn_modifiers(
             eff_list.append(StatusEffectInstance(StatusEffect.SHIELD, 1, float(shield_amount)))
 
 
-def apply_enemy_modifiers(
-    state: BattleState,
-    modifiers: list[dict],
-) -> None:
-    """Apply modifiers for enemy's turn (inverted perspective)."""
+def apply_enemy_modifiers(state: BattleState, modifiers: list[dict]) -> None:
+    """Применяет модификаторы для атаки врага (инвертированная перспектива).
+
+    В отличие от apply_nn_modifiers, здесь roles перевёрнуты,
+    так как враг — атакующий, игрок — защитник.
+    """
     for mod in modifiers:
         modifier = mod.get("modifier", "")
         value = mod.get("value", 1.0)
@@ -135,19 +167,16 @@ def apply_enemy_modifiers(
             eff_list.append(StatusEffectInstance(StatusEffect.SHIELD, 1, float(shield_amount)))
 
 
-def _apply_dot_damage(
-    effects: list[StatusEffectInstance],
-    target,
-) -> None:
+def _apply_dot_damage(effects: list[StatusEffectInstance], target) -> None:
+    """Применяет периодический урон (яд/кровотечение) в начале хода."""
     for eff in effects:
         if eff.kind in (StatusEffect.POISON, StatusEffect.BLEED) and eff.value > 0:
             dmg = max(1, int(eff.value))
             target.hp = max(0, target.hp - dmg)
 
 
-def _get_shield_absorb(
-    effects: list[StatusEffectInstance],
-) -> float:
+def _get_shield_absorb(effects: list[StatusEffectInstance]) -> float:
+    """Возвращает величину поглощения щита, если он есть."""
     for eff in effects:
         if eff.kind == StatusEffect.SHIELD:
             return eff.value
@@ -162,6 +191,17 @@ def resolve_turn(
     active_effects: dict[str, list[StatusEffectInstance]],
     nn_modifiers: Optional[list[dict]] = None,
 ) -> tuple[AttackResult, dict[str, list[StatusEffectInstance]]]:
+    """Разрешает один ход боя.
+
+    1. Применяет NN-модификаторы
+    2. Наносит DOT-урон обоим участникам
+    3. Проверяет оглушение атакующего
+    4. Рассчитывает урон атаки
+    5. Уменьшает длительности эффектов (tick)
+
+    Returns:
+        (AttackResult, обновлённые active_effects)
+    """
     state = BattleState(
         attacker=attacker,
         defender=defender,
@@ -205,7 +245,13 @@ def resolve_turn(
     if dodge_buff:
         dodge_override = clamp(defender.dodge_chance + DODGE_BUFF_AMOUNT, 0.0, DODGE_MAX)
 
-    result = calc_damage(attacker, defender, modifier_mult=modifier_mult, guaranteed_crit=crit_boost, shield_absorb=shield_absorb, dodge_override=dodge_override)
+    result = calc_damage(
+        attacker, defender,
+        modifier_mult=modifier_mult,
+        guaranteed_crit=crit_boost,
+        shield_absorb=shield_absorb,
+        dodge_override=dodge_override,
+    )
 
     if result.final_damage > 0 and not result.is_dodged:
         defender.hp = max(0, defender.hp - result.final_damage)
@@ -217,6 +263,9 @@ def resolve_turn(
 def _tick_effects(
     effects: dict[str, list[StatusEffectInstance]],
 ) -> dict[str, list[StatusEffectInstance]]:
+    """Уменьшает длительность всех активных эффектов на 1 ход.
+    Эффекты с duration <= 0 удаляются.
+    """
     new_effects: dict[str, list[StatusEffectInstance]] = {}
     for key, eff_list in effects.items():
         remaining = []

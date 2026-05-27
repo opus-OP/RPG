@@ -1,3 +1,10 @@
+"""Telegram-хендлеры: команды, callback-запросы, обработка текста.
+
+Вся логика взаимодействия с пользователем через Telegram.
+Каждая команда (/start, /create, /profile и т.д.) и каждый callback_data
+имеет соответствующий асинхронный хендлер.
+"""
+
 import time
 import uuid
 import logging
@@ -359,7 +366,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 #    await update.message.reply_text("Неизвестная команда. /help")
 
-# ─── /profile ───────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# /profile — просмотр персонажа
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char = await _ensure_char(update, context)
@@ -392,7 +401,9 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"\n\n🛡 Страж: {c.name}\n❤️ {c.hp}/{c.max_hp} | ⚔️ {c.attack_min}-{c.attack_max}"
     await _reply(update, text, reply_markup=main_menu())
 
-# ─── /inventory ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# /inventory — инвентарь
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char = await _ensure_char(update, context)
@@ -407,7 +418,9 @@ async def _show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE, ch
         text += "Пусто."
     await _reply(update, text, reply_markup=inventory_pages(char.inventory, page))
 
-# ─── /characters ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# /characters — управление персонажами
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_characters(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chars = await storage.load_characters(update.effective_user.id)
@@ -417,7 +430,9 @@ async def cmd_characters(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current = context.user_data.get("active_char") or chars[0].name
     await _reply(update, "Ваши персонажи:", reply_markup=char_list(chars, current))
 
-# ─── /location ──────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# /location — список локаций → рейд
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char = await _ensure_char(update, context)
@@ -425,7 +440,9 @@ async def cmd_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await _reply(update, "🗺 Выберите локацию:", reply_markup=location_list())
 
-# ─── /market ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# /market — рынок
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
     listings = MARKET.get_active_listings()
@@ -434,6 +451,10 @@ async def cmd_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await _show_market(update, context, listings, 0)
 
+
+# ═══════════════════════════════════════════════════════════════
+# /raid — вернуться в активный рейд
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = await _get_session(context)
@@ -468,7 +489,9 @@ async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listi
         text += f"\n{i}. {listing.item.name} [{listing.item.rarity.value}] — {listing.price}💰"
     await _reply(update, text, reply_markup=market_listings_kb(listings, page))
 
-# ─── Callback: main_menu ────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: главное меню
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -541,7 +564,9 @@ async def cb_char_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.edit_message_text("Ваши персонажи:", reply_markup=char_list(chars, chars[0].name))
 
-# ─── Callback: класс ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: выбор класса при создании персонажа
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -562,7 +587,9 @@ async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await _finish_creation(update, context, state)
 
-# ─── Callback: локация → подтверждение рейда ───────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: выбор локации → подтверждение рейда
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -635,6 +662,7 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raid_id = str(uuid.uuid4())[:8]
     session = create_raid(char, loc, raid_id)
     session.status = RaidStatus.IN_PROGRESS
+    session.participant_names = {uid: char.name}
     char.in_raid = True
     await _save_char(char)
     context.user_data["raid"] = session
@@ -642,7 +670,9 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _show_encounter(query, context, char, session)
 
 
-# ─── Онлайн-рейд: лобби ─────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Онлайн-рейд: создание лобби
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -665,15 +695,14 @@ async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     raid_id = str(uuid.uuid4())[:8]
-    code = token_hex(3).upper()
     session = create_raid(char, loc, raid_id)
     session.status = RaidStatus.PENDING
     session.participant_names = {uid: char.name}
     await storage.save_raid_session(raid_id, session_to_dict(session))
     context.user_data["raid_id"] = raid_id
     await query.edit_message_text(
-        raid_lobby_text(loc.name, code, [(uid, char.name)]),
-        reply_markup=raid_lobby(loc.name, code, [(uid, char.name)], True),
+        raid_lobby_text(loc.name, raid_id, [(uid, char.name)]),
+        reply_markup=raid_lobby(loc.name, raid_id, [(uid, char.name)], True),
     )
 
 
@@ -965,7 +994,9 @@ async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     return player_attack, enemy_attack, companion_attack, finished
 
-# ─── Callback: рейд — следующий враг ───────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: рейд — следующий враг
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -997,7 +1028,9 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await _show_encounter(query, context, char, session)
 
-# ─── Callback: рейд — сбежать ──────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: рейд — сбежать
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1017,7 +1050,9 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_raid(context)
     await query.edit_message_text("🏃 Вы сбежали из рейда!", reply_markup=main_menu())
 
-# ─── Callback: инвентарь — страницы + предмет ──────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: инвентарь — страницы + предмет
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_inv_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1137,7 +1172,9 @@ async def cb_inv_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["sell"] = {"step": "price", "item_uid": item_uid, "char": char}
     await query.edit_message_text(f"💰 Введите цену для {item.name}:")
 
-# ─── Callback: рынок — страницы + покупка ──────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: рынок — страницы + покупка
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_market_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1206,7 +1243,9 @@ async def cb_market_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("Не удалось отменить.", reply_markup=main_menu())
 
-# ─── Callback: персонажи ───────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Callback: управление персонажами
+# ═══════════════════════════════════════════════════════════════
 
 async def cb_char_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1259,7 +1298,9 @@ async def cb_char_delete_confirm(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(f"🗑 Персонаж **{name}** удалён.", reply_markup=main_menu())
 
 
-# ─── Админ-команды ─────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Админ-команды (требуют пароль)
+# ═══════════════════════════════════════════════════════════════
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -1396,7 +1437,9 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _save_char(char)
     await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
 
-# ─── Регистрация ───────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# Регистрация всех хендлеров
+# ═══════════════════════════════════════════════════════════════
 
 def register_handlers(app: Application):
     app.add_handler(CommandHandler("menu", cmd_menu))

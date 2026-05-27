@@ -1,3 +1,9 @@
+"""Инлайн-клавиатуры для Telegram-интерфейса.
+
+Все клавиатуры используют callback_data с префиксами для маршрутизации
+в соответствующие хендлеры (см. register_handlers в handlers.py).
+"""
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from secrets import token_hex
 
@@ -6,6 +12,7 @@ from core.locations import LOCATIONS
 
 
 def main_menu() -> InlineKeyboardMarkup:
+    """Главное меню: профиль, инвентарь, локации, рынок, персонажи."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👤 Профиль", callback_data="profile"),
          InlineKeyboardButton("🎒 Инвентарь", callback_data="inventory")],
@@ -16,7 +23,7 @@ def main_menu() -> InlineKeyboardMarkup:
 
 
 def class_selection() -> InlineKeyboardMarkup:
-    row = []
+    """Выбор класса при создании персонажа (2 колонки)."""
     buttons = []
     for key, cls in CLASSES.items():
         buttons.append(InlineKeyboardButton(cls.name, callback_data=f"class_{key}"))
@@ -24,6 +31,7 @@ def class_selection() -> InlineKeyboardMarkup:
 
 
 def location_list() -> InlineKeyboardMarkup:
+    """Список доступных локаций для рейда."""
     keyboard = []
     for key, loc in LOCATIONS.items():
         keyboard.append([InlineKeyboardButton(
@@ -35,13 +43,16 @@ def location_list() -> InlineKeyboardMarkup:
 
 
 def confirm_raid(location_key: str) -> InlineKeyboardMarkup:
+    """Подтверждение рейда: соло / онлайн / отмена."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚔️ Соло", callback_data=f"raid_start_{location_key}")],
         [InlineKeyboardButton("👥 Онлайн", callback_data=f"raid_online_{location_key}")],
         [InlineKeyboardButton("❌ Отмена", callback_data="main_menu")],
     ])
 
+
 def raid_lobby(location_name: str, code: str, participants: list[tuple[int, str]], is_owner: bool) -> InlineKeyboardMarkup:
+    """Лобби группового рейда: список участников, старт (только лидер), выход."""
     keyboard = []
     for uid, name in participants:
         keyboard.append([InlineKeyboardButton(f"👤 {name}", callback_data="raid_lobby_noop")])
@@ -50,7 +61,9 @@ def raid_lobby(location_name: str, code: str, participants: list[tuple[int, str]
     keyboard.append([InlineKeyboardButton("🏃 Выйти", callback_data="raid_lobby_leave")])
     return InlineKeyboardMarkup(keyboard)
 
+
 def raid_lobby_text(location_name: str, code: str, participants: list[tuple[int, str]]) -> str:
+    """Текст лобби: название локации, код, участники."""
     lines = [f"🎮 **{location_name}** — ожидание игроков"]
     lines.append(f"🔑 Код: `{code}`")
     lines.append("")
@@ -63,6 +76,7 @@ def raid_lobby_text(location_name: str, code: str, participants: list[tuple[int,
 
 
 def raid_actions() -> InlineKeyboardMarkup:
+    """Кнопки во время рейда: действие / сбежать."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔮 Действие", callback_data="raid_action")],
         [InlineKeyboardButton("🏃 Сбежать", callback_data="raid_leave")],
@@ -70,24 +84,28 @@ def raid_actions() -> InlineKeyboardMarkup:
 
 
 def raid_next() -> InlineKeyboardMarkup:
+    """Переход к следующему врагу."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➡️ Следующий", callback_data="raid_next")],
     ])
 
 
 def raid_done() -> InlineKeyboardMarkup:
+    """Завершение рейда — возврат в меню."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Завершить", callback_data="main_menu")],
     ])
 
 
 def raid_failed() -> InlineKeyboardMarkup:
+    """Поражение в рейде."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💀 Вернуться", callback_data="main_menu")],
     ])
 
 
 def inventory_pages(items: list, page: int = 0, per_page: int = 6) -> InlineKeyboardMarkup:
+    """Инвентарь с постраничной навигацией (6 предметов на странице)."""
     if not items:
         return InlineKeyboardMarkup([[InlineKeyboardButton("В меню", callback_data="main_menu")]])
     start = page * per_page
@@ -110,6 +128,7 @@ def inventory_pages(items: list, page: int = 0, per_page: int = 6) -> InlineKeyb
 
 
 def item_actions(item_uid: str) -> InlineKeyboardMarkup:
+    """Действия с предметом: надеть, снять, продать, выбросить."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔧 Надеть", callback_data=f"inv_equip_{item_uid}")],
         [InlineKeyboardButton("📦 Снять", callback_data=f"inv_unequip_{item_uid}")],
@@ -120,6 +139,7 @@ def item_actions(item_uid: str) -> InlineKeyboardMarkup:
 
 
 def char_list(characters: list, current_name: str) -> InlineKeyboardMarkup:
+    """Список персонажей с переключением и удалением."""
     keyboard = []
     for c in characters:
         mark = "✅ " if c.name == current_name else ""
@@ -136,6 +156,7 @@ def char_list(characters: list, current_name: str) -> InlineKeyboardMarkup:
 
 
 def char_delete_confirm(name: str) -> InlineKeyboardMarkup:
+    """Подтверждение удаления персонажа."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Подтвердить", callback_data=f"char_del_yes_{name}")],
         [InlineKeyboardButton("❌ Отмена", callback_data="char_list")],
@@ -143,6 +164,7 @@ def char_delete_confirm(name: str) -> InlineKeyboardMarkup:
 
 
 def market_listings(listings: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Список объявлений рынка с пагинацией и обновлением."""
     if not listings:
         return InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="main_menu")]])
     start = page * per_page
@@ -166,6 +188,7 @@ def market_listings(listings: list, page: int = 0, per_page: int = 5) -> InlineK
 
 
 def market_confirm(listing_id: str) -> InlineKeyboardMarkup:
+    """Подтверждение покупки."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Купить", callback_data=f"market_confirm_{listing_id}")],
         [InlineKeyboardButton("❌ Отмена", callback_data="market")],
