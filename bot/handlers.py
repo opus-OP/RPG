@@ -56,18 +56,25 @@ def _char_status_line(char: Character) -> str:
     return f"❤️ **{char.hp}**/{char.max_hp} | ⚔️ {char.attack_min}-{char.attack_max} | 🛡 {char.defense}"
 
 
-def _initiative_line(enc) -> str:
+def _initiative_line(enc, char: Character) -> str:
     order = enc.initiative_order
     if not order:
         return ""
+    has_companion = char.companion is not None and char.companion.alive
     icons = {"player": "🧑", "companion": "🛡", "enemy": "👾"}
     names = {"player": "Вы", "companion": "Страж", "enemy": enc.enemy_template["name"]}
-    parts = [f"{icons.get(who, '❓')}{names.get(who, who)}" for who in order]
+    parts = []
+    for who in order:
+        if who == "companion" and not has_companion:
+            continue
+        parts.append(f"{icons.get(who, '❓')}{names.get(who, who)}")
+    if not parts:
+        return ""
     return f"⚡ Инициатива: {' → '.join(parts)}"
 
 
 def _encounter_header(cur: int, total: int, enc, char: Character) -> str:
-    header = f"⚔️ Рейд {cur}/{total}\n{_initiative_line(enc)}\n\n"
+    header = f"⚔️ Рейд {cur}/{total}\n{_initiative_line(enc, char)}\n\n"
     header += f"{_enemy_status_line(enc)}\n\n"
     header += _char_status_line(char)
     if char.companion and char.companion.alive:
@@ -269,26 +276,46 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         async def send_result(kb):
             msg = await update.message.reply_text(
-                _encounter_header(cur, total, enc, char),
+                full_text,
                 reply_markup=kb,
             )
             context.user_data["raid_msg_chat"] = msg.chat_id
             context.user_data["raid_msg_id"] = msg.message_id
             return msg
 
-        # ─── Player action message ───
-        player_text = f"{_encounter_header(cur, total, enc, char)}\n\n"
-        if player_narrative:
-            player_text += f"📖 {player_narrative}\n\n"
-        player_text += _attack_desc("Вы", player_attack) + "\n"
-        if companion_attack:
-            player_text += _attack_desc("🛡 Страж", companion_attack) + "\n"
+        # ─── Build action log in initiative order ───
+        header = _encounter_header(cur, total, enc, char)
+        action_parts = []
+        order = enc.initiative_order or ["player", "companion", "enemy"]
+        has_companion = char.companion is not None and char.companion.alive
+        for actor in order:
+            if actor == "companion" and not has_companion:
+                continue
+            if actor == "player":
+                if player_narrative:
+                    action_parts.append(f"📖 {player_narrative}")
+                desc = _attack_desc("Вы", player_attack)
+                if desc:
+                    action_parts.append(desc)
+            elif actor == "companion":
+                desc = _attack_desc("🛡 Страж", companion_attack)
+                if desc:
+                    action_parts.append(desc)
+            elif actor == "enemy":
+                if enemy_narrative:
+                    action_parts.append(f"📖 {enemy_narrative}")
+                desc = _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит")
+                if desc:
+                    action_parts.append(desc)
 
-        # ─── Enemy action message / final ───
+        combat_log = "\n".join(action_parts)
+        full_text = f"{header}\n\n{combat_log}"
+
+        # ─── Final / continue ───
         if finished:
-            char.count_raid +=1
+            char.count_raid += 1
             if char.hp <= 0:
-                player_text += "\n\n💀 **Вы погибли!**"
+                full_text += "\n\n💀 **Вы погибли!**"
                 session.status = RaidStatus.FAILED
                 char.in_raid = False
                 char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
@@ -300,7 +327,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send_result(raid_failed())
             elif enc.enemy_hp <= 0:
                 enc.finished = True
-                player_text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
+                full_text += f"\n\n✅ {enc.enemy_template['name']} повержен!"
                 if session.current_encounter + 1 >= len(session.encounters):
                     session.status = RaidStatus.COMPLETED
                     loc = get_location(session.location_key)
@@ -311,10 +338,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         loot_text = ""
                         if my_reward:
                             loot_text = "\n" + my_reward[1]
-                        player_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
+                        full_text += f"\n\n🏆 **Рейд пройден!**{loot_text}"
                         await send_result(raid_done())
                     else:
-                        player_text += "\n\n⚠️ Ошибка: локация не найдена."
+                        full_text += "\n\n⚠️ Ошибка: локация не найдена."
                         await send_result(main_menu())
                 else:
                     await _save_char(char)
@@ -323,15 +350,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _save_char(char)
                 await send_result(raid_actions())
         else:
-            # Enemy alive — send player msg, then enemy msg
-            player_text += "\n\n⏳ Ожидание ответа врага..."
-            player_msg = await update.message.reply_text(player_text)
-            enemy_text = f"{_encounter_header(cur, total, enc, char)}\n\n"
-            if enemy_narrative:
-                enemy_text += f"📖 {enemy_narrative}\n\n"
-            enemy_text += _attack_desc(f"👾 {enc.enemy_template['name']}", enemy_attack, "наносит") + "\n"
             await _save_char(char)
-            msg = await player_msg.reply_text(enemy_text, reply_markup=raid_actions())
+            msg = await update.message.reply_text(full_text, reply_markup=raid_actions())
             context.user_data["raid_msg_chat"] = msg.chat_id
             context.user_data["raid_msg_id"] = msg.message_id
         return
