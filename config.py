@@ -40,7 +40,7 @@ MAX_GROUP_SIZE = 4                     # макс игроков в группе
 RAID_SOLO_TIMEOUT = 300                # таймаут соло-рейда (сек)
 RAID_GROUP_CREATE_TIMEOUT = 600        # таймаут создания группы (сек)
 RAID_GROUP_JOIN_TIMEOUT = 120          # таймаут присоединения (сек)
-RAID_COOLDOWN_HOURS = 7                # мин часов между рейдами
+RAID_COOLDOWN_HOURS = 0.1               # мин часов между рейдами
 
 MARKET_COMMISSION = 0.05        # комиссия аукциона (5%)
 REPAIR_ENABLED = False          # разрешён ли ремонт предметов

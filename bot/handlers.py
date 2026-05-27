@@ -279,6 +279,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # ─── Enemy action message / final ───
         if finished:
+            char.count_raid +=1
             if char.hp <= 0:
                 player_text += "\n\n💀 **Вы погибли!**"
                 session.status = RaidStatus.FAILED
@@ -849,12 +850,14 @@ def _cleanup_raid(context):
 async def _reward_all_participants(session: RaidSession, location, context) -> list[tuple[str, str]]:
     """Give loot/exp/gold to all raid participants. Returns [(char_name, loot_text), ...]."""
     results = []
-    for uid_str in list(session.participant_names.keys()):
+    for uid_str, char_name in list(session.participant_names.items()):
         uid = int(uid_str)
         chars = await storage.load_characters(uid)
         if not chars:
             continue
-        char = chars[0]
+        char = next((c for c in chars if c.name == char_name), None)
+        if not char:
+            continue
         loot = generate_loot(location, len(session.encounters), char.level, [char.class_key])
         distribute_exp_gold(session, location, [char])
         char.inventory.extend(loot)

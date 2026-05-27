@@ -58,6 +58,7 @@ class Character:
     companion_name: str = "Призванный страж"
     companion_description: str = ""
     last_raid_time: float = 0.0
+    count_raid: int = 0
 
     def __post_init__(self):
         if self.hp == 0 and self.max_hp == 0:
@@ -212,14 +213,14 @@ class Character:
         self.alive = True
 
     def can_raid(self) -> bool:
-        if self.last_raid_time == 0:
+        if self.last_raid_time == 0 or self.count_raid % 3 != 0:
             return True
         from config import RAID_COOLDOWN_HOURS
         elapsed = time.time() - self.last_raid_time
         return elapsed >= RAID_COOLDOWN_HOURS * 3600
 
     def raid_cooldown_remaining(self) -> float:
-        if self.last_raid_time == 0:
+        if self.last_raid_time == 0 or self.count_raid % 3 != 0:
             return 0.0
         from config import RAID_COOLDOWN_HOURS
         elapsed = time.time() - self.last_raid_time

@@ -138,6 +138,7 @@ def character_to_dict(char: Character) -> dict:
         "companion_name": char.companion_name,
         "companion_description": char.companion_description,
         "last_raid_time": char.last_raid_time,
+        "count_raid": char.count_raid,
     }
 
 
@@ -160,5 +161,6 @@ def character_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Chara
         companion_name=data.get("companion_name", "Призванный страж"),
         companion_description=data.get("companion_description", ""),
         last_raid_time=data.get("last_raid_time", 0.0),
+        count_raid=data.get("count_raid", 0),
     )
     return char
