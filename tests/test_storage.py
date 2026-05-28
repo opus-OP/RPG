@@ -15,7 +15,7 @@ def ensure_templates():
 
 def test_item_to_dict_roundtrip():
     tpl = ItemTemplate("Test Sword", ItemType.WEAPON, Rarity.RARE,
-                        ItemEffect(atk_bonus=5, crit_chance_bonus=0.02))
+                        ItemEffect(strength_bonus=5, crit_chance_bonus=0.02))
     item = Item(template=tpl, uid="test_001", durability=80, durability_max=100)
     d = item_to_dict(item)
     restored = item_from_dict(d, _ITEM_TEMPLATES)
@@ -28,14 +28,14 @@ def test_item_to_dict_roundtrip():
 def test_item_roundtrip_with_unknown_template():
     """Items with template not in _ITEM_TEMPLATES rebuild from template_data."""
     tpl = ItemTemplate("Dynamic Axe", ItemType.WEAPON, Rarity.EPIC,
-                        ItemEffect(atk_bonus=12, defense_bonus=3),
+                        ItemEffect(strength_bonus=12, defense_bonus=3),
                         required_level=10)
-    item = Item(template=tpl, uid="dyn_001")
+    item = Item(template=tpl, uid="dyn_001", durability=100, durability_max=100)
     d = item_to_dict(item)
     restored = item_from_dict(d, {})
     assert restored is not None
     assert restored.template.name == "Dynamic Axe"
-    assert restored.template.base_effect.atk_bonus == 12
+    assert restored.template.base_effect.strength_bonus == 12
     assert restored.template.required_level == 10
 
 
@@ -43,7 +43,7 @@ def test_static_template_resolved_from_registry():
     """Items with known template names use the registered template."""
     tpl = _ITEM_TEMPLATES.get("Деревянный меч")
     assert tpl is not None
-    item = Item(template=tpl, uid="static_001")
+    item = Item(template=tpl, uid="static_001", durability=100, durability_max=100)
     d = item_to_dict(item)
     restored = item_from_dict(d, _ITEM_TEMPLATES)
     assert restored is not None
@@ -121,7 +121,7 @@ async def test_delete_raid_session(storage):
 async def test_market_listing_crud(storage):
     from core.items import ItemTemplate, ItemEffect, ItemType, Rarity, Item
     tpl = ItemTemplate("Test Ring", ItemType.ACCESSORY, Rarity.COMMON, ItemEffect(hp_bonus=5))
-    item = Item(template=tpl, uid="market_001")
+    item = Item(template=tpl, uid="market_001", durability=100, durability_max=100)
     await storage.save_market_listing("list_001", 1, "TestChar", item, 100)
     listings = await storage.load_active_market_listings()
     assert len(listings) >= 1

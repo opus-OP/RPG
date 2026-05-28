@@ -26,16 +26,16 @@ def register_templates():
     """
     from core.items import ItemTemplate, ItemEffect, Rarity, ItemType
     tpls = [
-        ItemTemplate("Деревянный меч", ItemType.WEAPON, Rarity.COMMON, ItemEffect(atk_bonus=2)),
+        ItemTemplate("Деревянный меч", ItemType.WEAPON, Rarity.COMMON, ItemEffect(strength_bonus=2)),
         ItemTemplate("Кожаная куртка", ItemType.ARMOR, Rarity.COMMON, ItemEffect(defense_bonus=3)),
         ItemTemplate("Кольцо выносливости", ItemType.ACCESSORY, Rarity.RARE, ItemEffect(hp_bonus=10)),
-        ItemTemplate("Волчий клык", ItemType.WEAPON, Rarity.RARE, ItemEffect(atk_bonus=5, crit_chance_bonus=0.02)),
-        ItemTemplate("Стальной топор", ItemType.WEAPON, Rarity.COMMON, ItemEffect(atk_bonus=5)),
+        ItemTemplate("Волчий клык", ItemType.WEAPON, Rarity.RARE, ItemEffect(strength_bonus=4, agility_bonus=1, crit_chance_bonus=0.02)),
+        ItemTemplate("Стальной топор", ItemType.WEAPON, Rarity.COMMON, ItemEffect(strength_bonus=5)),
         ItemTemplate("Каменная броня", ItemType.ARMOR, Rarity.RARE, ItemEffect(defense_bonus=8, hp_bonus=15)),
         ItemTemplate("Амулет тролля", ItemType.ACCESSORY, Rarity.EPIC, ItemEffect(hp_bonus=30, defense_bonus=5)),
-        ItemTemplate("Проклятый клинок", ItemType.WEAPON, Rarity.RARE, ItemEffect(atk_bonus=10, crit_chance_bonus=0.05)),
+        ItemTemplate("Проклятый клинок", ItemType.WEAPON, Rarity.RARE, ItemEffect(strength_bonus=6, agility_bonus=4, crit_chance_bonus=0.05)),
         ItemTemplate("Плащ теней", ItemType.ARMOR, Rarity.EPIC, ItemEffect(defense_bonus=12, dodge_bonus=0.05)),
-        ItemTemplate("Корона смерти", ItemType.ACCESSORY, Rarity.LEGENDARY, ItemEffect(atk_bonus=15, crit_chance_bonus=0.08, hp_bonus=50)),
+        ItemTemplate("Корона смерти", ItemType.ACCESSORY, Rarity.LEGENDARY, ItemEffect(strength_bonus=5, agility_bonus=5, intelligence_bonus=5, crit_chance_bonus=0.08, hp_bonus=50)),
     ]
     for t in tpls:
         _ITEM_TEMPLATES[t.name] = t

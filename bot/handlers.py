@@ -17,7 +17,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 
-from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS
+from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
@@ -38,6 +38,21 @@ from bot.keyboards import (
 )
 
 log = logging.getLogger("rpg.handlers")
+
+ALLOWED_CHAT_FILTER = filters.ChatType.PRIVATE
+if config.ALLOWED_CHAT_ID is not None:
+    ALLOWED_CHAT_FILTER = ALLOWED_CHAT_FILTER | filters.Chat(chat_id=config.ALLOWED_CHAT_ID)
+
+
+def _chat_allowed(update: Update) -> bool:
+    chat = update.effective_chat
+    if chat is None:
+        return False
+    if chat.type == "private":
+        return True
+    if config.ALLOWED_CHAT_ID is not None and chat.id == config.ALLOWED_CHAT_ID:
+        return True
+    return False
 
 
 def _attack_desc(owner: str, result, noun: str = "нанесли") -> str:
@@ -160,6 +175,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/location — список локаций\n"
         "/market — рынок\n"
         "/raid — вернуться в рейд\n"
+        "/forfeit — сдаться в рейде\n"
         "/characters — мои персонажи\n"
         "/menu — главное меню",
     )
@@ -212,6 +228,8 @@ async def _finish_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, s
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _chat_allowed(update):
+        return
     uid = update.effective_user.id
     text = update.message.text.strip()
 
@@ -251,6 +269,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         turn = get_current_turn(enc)
         if turn and turn["type"] == "player" and turn["uid"] == uid:
             context.user_data.pop("raid_action_pending", None)
+            if enc.turn_timeout_deadline and time.time() > enc.turn_timeout_deadline:
+                await update.message.reply_text("⏰ Ваш ход истёк! Вы промедлили…")
+                advance_turn_core(enc)
+                await _advance_turn(context, session)
+                return
             await _handle_player_turn(update, context, session, uid, text)
             return
         if context.user_data.get("raid_action_pending"):
@@ -455,424 +478,10 @@ async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listi
 # ═══════════════════════════════════════════════════════════════
 
 async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _chat_allowed(update):
+        return
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Главное меню:", reply_markup=main_menu())
-
-
-async def cb_stat_alloc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    attr_map = {"stat_str": "strength", "stat_agi": "agility", "stat_int": "intelligence"}
-    attr = attr_map.get(query.data)
-    if not attr:
-        await cb_profile(update, context)
-        return
-    char = await _get_char(uid, context)
-    if not char:
-        return
-    ok = char.allocate_stat(attr)
-    if not ok:
-        await query.edit_message_text("Нет очков для распределения.")
-        return
-    await _save_char(char)
-    await cb_profile(update, context)
-
-
-async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    char = await _get_char(update.effective_user.id, context)
-    if not char:
-        await query.edit_message_text("Нет персонажа. /create")
-        return
-    t = char.template
-    s = char.stats
-    points_line = ""
-    if char.stat_points > 0:
-        points_line = f"\n📌 **{char.stat_points}** очков для распределения"
-    text = (
-        f"👤 **{char.name}** — {t.name} | Ур. {char.level}\n"
-        f"✨ Опыт: {char.experience}/{char.exp_to_next}{points_line}\n"
-        f"{_char_status_line(char)}\n"
-        f"🎯 Крит: {char.crit_chance*100:.1f}% | Уклон: {char.dodge_chance*100:.1f}%\n"
-        f"📊 Сила {s.strength} | Ловк {s.agility} | Инт {s.intelligence}\n\n"
-        f"💰 **{char.gold}** золота\n\n"
-        f"🗡 Оружие: {_slot_item(char, 'weapon')}\n"
-        f"🛡 Броня: {_slot_item(char, 'armor')}\n"
-        f"💍 Аксессуар: {_slot_item(char, 'accessory')}"
-    )
-    kb = main_menu()
-    if char.stat_points > 0:
-        from bot.keyboards import stats_distribution
-        kb = stats_distribution()
-    await query.edit_message_text(text, reply_markup=kb)
-
-
-async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    char = await _get_char(update.effective_user.id, context)
-    if not char:
-        await query.edit_message_text("Нет персонажа. /create")
-        return
-    await _show_inventory(update, context, char, 0)
-
-
-async def cb_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    char = await _get_char(update.effective_user.id, context)
-    if not char:
-        await query.edit_message_text("Нет персонажа. /create", reply_markup=main_menu())
-        return
-    await query.edit_message_text("🗺 Выберите локацию:", reply_markup=location_list())
-
-
-async def cb_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    listings = MARKET.get_active_listings()
-    if not listings:
-        await query.edit_message_text("🏪 Рынок пуст.", reply_markup=main_menu())
-        return
-    await _show_market(update, context, listings, 0)
-
-
-async def cb_market_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cb_market(update, context)
-
-
-async def cb_char_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    chars = await storage.load_characters(update.effective_user.id)
-    if not chars:
-        await query.edit_message_text("Нет персонажей. /create")
-        return
-    await query.edit_message_text("Ваши персонажи:", reply_markup=char_list(chars, chars[0].name))
-
-# ═══════════════════════════════════════════════════════════════
-# Callback: выбор класса при создании персонажа
-# ═══════════════════════════════════════════════════════════════
-
-async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    state = context.user_data.get("creation")
-    if not state or state["step"] != "class":
-        await query.edit_message_text("Создание не активно. /create")
-        return
-    cls_key = query.data[len("class_"):]
-    if cls_key not in CLASSES:
-        await query.edit_message_text("Неверный класс.")
-        return
-    state["class_key"] = cls_key
-    if cls_key == "leader":
-        state["step"] = "companion_name"
-        await query.edit_message_text("Лидер может призвать стража.\nВведите имя стража:")
-    else:
-        await _finish_creation(update, context, state)
-
-# ═══════════════════════════════════════════════════════════════
-# Callback: выбор локации → подтверждение рейда
-# ═══════════════════════════════════════════════════════════════
-
-async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    key = query.data[len("loc_"):]
-    loc = get_location(key)
-    if not loc:
-        await query.edit_message_text("Локация не найдена.")
-        return
-    char = await _get_char(update.effective_user.id, context)
-    if not char:
-        await query.edit_message_text("Нет персонажа. /create")
-        return
-    if char.in_raid:
-        session = context.user_data.get("raid")
-        if session and session.status == RaidStatus.IN_PROGRESS:
-            await query.edit_message_text("Вы уже в рейде! Завершите его.")
-            return
-        char.in_raid = False
-        char.release_companion()
-        await _save_char(char)
-    if not char.can_raid():
-        rem = char.raid_cooldown_remaining()
-        hrs = int(rem // 3600)
-        mins = int((rem % 3600) // 60)
-        await query.edit_message_text(f"⏳ До следующего рейда {hrs}ч {mins}м.")
-        return
-    text = (
-        f"🗺 {loc.name} (ур. {loc.recommended_level})\n"
-        f"{loc.description}\n"
-        f"☠️ Опасность: {loc.danger}/10\n"
-        f"💰 Награда: {loc.gold_min}-{loc.gold_max} золота, {loc.exp_reward} опыта"
-    )
-    await query.edit_message_text(text, reply_markup=confirm_raid(key))
-
-
-async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    key = query.data[len("raid_start_"):]
-    loc = get_location(key)
-    if not loc:
-        await query.edit_message_text("Локация не найдена.")
-        return
-    char = await _get_char(uid, context)
-    if not char:
-        await query.edit_message_text("Персонаж не найден.")
-        return
-    if char.in_raid:
-        session = context.user_data.get("raid")
-        if session and session.status == RaidStatus.IN_PROGRESS:
-            await query.edit_message_text("Вы уже в рейде! Завершите его.")
-            return
-        char.in_raid = False
-        char.release_companion()
-        await _save_char(char)
-        char = await _get_char(uid, context)
-        if not char:
-            await query.edit_message_text("Персонаж не найден.")
-            return
-
-    if not char.can_raid():
-        rem = char.raid_cooldown_remaining()
-        hrs = int(rem // 3600)
-        mins = int((rem % 3600) // 60)
-        await query.edit_message_text(f"⏳ До следующего рейда {hrs}ч {mins}м.")
-        return
-
-    raid_id = str(uuid.uuid4())[:8]
-    session = create_raid(char, loc, raid_id)
-    session.status = RaidStatus.IN_PROGRESS
-    session.participant_names = {uid: char.name}
-    char.in_raid = True
-    await _save_char(char)
-    context.user_data["raid"] = session
-
-    enc = session.encounters[0]
-    chars = {uid: char}
-    enc.initiative_order = build_initiative_order(chars, enc)
-    enc.current_turn_index = 0
-    enc.round_number = 0
-    await _save_session(context, session)
-
-    await query.edit_message_text(
-        f"⚔️ Рейд начался!\n\n"
-        f"👾 **{enc.enemy_template['name']}** ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}\n\n"
-        f"Бросаем инициативу…"
-    )
-    await _advance_turn(context, session)
-
-
-# ═══════════════════════════════════════════════════════════════
-# Онлайн-рейд: создание лобби
-# ═══════════════════════════════════════════════════════════════
-
-async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    key = query.data[len("raid_online_"):]
-    loc = get_location(key)
-    if not loc:
-        await query.edit_message_text("Локация не найдена.")
-        return
-    char = await _get_char(uid, context)
-    if not char:
-        await query.edit_message_text("Персонаж не найден.")
-        return
-    if not char.can_raid():
-        rem = char.raid_cooldown_remaining()
-        hrs = int(rem // 3600)
-        mins = int((rem % 3600) // 60)
-        await query.edit_message_text(f"⏳ До следующего рейда {hrs}ч {mins}м.")
-        return
-
-    raid_id = str(uuid.uuid4())[:8]
-    session = create_raid(char, loc, raid_id)
-    session.status = RaidStatus.PENDING
-    session.participant_names = {uid: char.name}
-    await storage.save_raid_session(raid_id, session_to_dict(session))
-    context.user_data["raid_id"] = raid_id
-    await query.edit_message_text(
-        raid_lobby_text(loc.name, raid_id, [(uid, char.name)]),
-        reply_markup=raid_lobby(loc.name, raid_id, [(uid, char.name)], True),
-    )
-
-
-async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if not args:
-        await _reply(update, "Использование: /raidjoin <код>")
-        return
-    code = args[0]
-    uid = update.effective_user.id
-    char = await _get_char(uid, context)
-    if not char:
-        await _reply(update, "У вас нет персонажа. Сначала создайте: /create")
-        return
-    if not char.can_raid():
-        rem = char.raid_cooldown_remaining()
-        hrs = int(rem // 3600)
-        mins = int((rem % 3600) // 60)
-        await _reply(update, f"⏳ До следующего рейда {hrs}ч {mins}м.")
-        return
-
-    try:
-        result = await storage.find_pending_raid_by_code(code)
-    except Exception as e:
-        log.exception("find_pending_raid_by_code crashed")
-        await _reply(update, "❌ Ошибка при поиске рейда. Попробуйте позже.")
-        return
-
-    if not result:
-        await _reply(update, f"Рейд с кодом `{code}` не найден или уже начался.")
-        return
-
-    raid_id, data = result
-    participants = data.get("participant_names", {})
-    if str(uid) in participants:
-        await _reply(update, "Вы уже в этом рейде.")
-        return
-    if len(participants) >= 4:
-        await _reply(update, "В рейде уже 4 игрока — максимум.")
-        return
-
-    participants[str(uid)] = char.name
-    data["participant_names"] = participants
-    await storage.save_raid_session(raid_id, data)
-    context.user_data["raid_id"] = raid_id
-
-    loc_name = get_location(data["location_key"]).name if get_location(data["location_key"]) else "?"
-    await _reply(update, f"✅ Вы присоединились к рейду **{loc_name}**!")
-    # Notify the owner
-    owner_id = int(list(participants.keys())[0])
-    try:
-        await context.bot.send_message(
-            owner_id,
-            f"👤 {char.name} присоединился к рейду!",
-        )
-    except Exception:
-        pass
-
-
-async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    raid_id = context.user_data.get("raid_id")
-    if not raid_id:
-        await query.edit_message_text("Рейд не найден.")
-        return
-    data = await storage.load_raid_session(raid_id)
-    if not data:
-        await query.edit_message_text("Рейд не найден в БД.")
-        return
-    participants = data.get("participant_names", {})
-    owner_id = int(list(participants.keys())[0])
-    if uid != owner_id:
-        await query.edit_message_text("Только создатель может начать рейд.")
-        return
-    if len(participants) < 1:
-        await query.edit_message_text("Нужен хотя бы 1 участник.")
-        return
-
-    loc = get_location(data["location_key"])
-    if not loc:
-        await query.edit_message_text("Локация не найдена.")
-        return
-
-    raid_id = data["raid_id"]
-    session = session_from_dict(data)
-    session.status = RaidStatus.IN_PROGRESS
-    # Scale HP for group size
-    gs = len(participants)
-    if gs > 1:
-        for enc in session.encounters:
-            enc.enemy_hp = int(enc.enemy_hp * (1 + 0.3 * (gs - 1)))
-            enc.enemy_max_hp = enc.enemy_hp
-    enc = session.encounters[0]
-    chars = await _get_participant_chars(context, session)
-    enc.initiative_order = build_initiative_order(chars, enc)
-    enc.current_turn_index = 0
-    enc.round_number = 0
-    await storage.save_raid_session(raid_id, session_to_dict(session))
-
-    # Notify all participants
-    for pid in participants:
-        try:
-            char = await _get_char(pid, context)
-            if char:
-                char.in_raid = True
-                await _save_char(char)
-            await context.bot.send_message(
-                pid,
-                f"⚔️ Рейд в **{loc.name}** начался!\n\n"
-                f"👾 {enc.enemy_template['name']} ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}",
-            )
-        except Exception:
-            pass
-
-    await query.edit_message_text("⚔️ Рейд начат! Бросаем инициативу…")
-    # Start first turn
-    await _advance_turn(context, session)
-
-
-async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = update.effective_user.id
-    raid_id = context.user_data.get("raid_id")
-    if not raid_id:
-        await query.edit_message_text("Рейд не найден.")
-        return
-    data = await storage.load_raid_session(raid_id)
-    if not data:
-        await query.edit_message_text("Рейд не найден в БД.")
-        return
-    participants = data.get("participant_names", {})
-    if uid not in participants:
-        await query.edit_message_text("Вы не в этом рейде.")
-        return
-    del participants[uid]
-    context.user_data.pop("raid_id", None)
-    if not participants:
-        await storage.delete_raid_session(raid_id)
-        await query.edit_message_text("Вы вышли. Рейд удалён (нет участников).")
-        return
-    data["participant_names"] = participants
-    await storage.save_raid_session(raid_id, data)
-    loc = get_location(data["location_key"])
-    loc_name = loc.name if loc else "?"
-    part_list = [(int(k), v) for k, v in participants.items()]
-    await query.edit_message_text(
-        raid_lobby_text(loc_name, raid_id, part_list),
-        reply_markup=raid_lobby(loc_name, raid_id, part_list, uid == int(list(participants.keys())[0])),
-    )
-
-
-async def _get_session(context) -> Optional[RaidSession]:
-    """Get raid session from user_data or DB."""
-    session = context.user_data.get("raid")
-    if session:
-        return session
-    raid_id = context.user_data.get("raid_id")
-    if not raid_id:
-        return None
-    data = await storage.load_raid_session(raid_id)
-    if not data:
-        return None
-    return session_from_dict(data)
-
-
-def _cleanup_raid(context):
     context.user_data.pop("raid", None)
     context.user_data.pop("raid_id", None)
     context.user_data.pop("raid_action_pending", None)
@@ -910,6 +519,15 @@ async def _reward_all_participants(session: RaidSession, location, context) -> l
         except Exception:
             pass
     return results
+
+
+def _cleanup_raid(context):
+    """Clear raid state from context."""
+    context.user_data.pop("raid", None)
+    context.user_data.pop("raid_id", None)
+    context.user_data.pop("raid_action_pending", None)
+    context.user_data.pop("raid_msg_chat", None)
+    context.user_data.pop("raid_msg_id", None)
 
 
 async def _save_session(context, session: RaidSession):
@@ -983,25 +601,6 @@ async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         await query.edit_message_text("Главное меню:", reply_markup=main_menu())
 
-
-async def _do_turn(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                   char: Character, session: RaidSession, nn_modifiers,
-                   enemy_nn_modifiers=None, reply_to=None):
-    uid = update.effective_user.id
-    enc = session.encounters[session.current_encounter]
-
-    try:
-        player_attack, enemy_attack, companion_attack, finished = process_encounter_turn(
-            session, char, nn_modifiers=nn_modifiers,
-            enemy_nn_modifiers=enemy_nn_modifiers,
-        )
-    except Exception as e:
-        log.exception("process_encounter_turn crashed")
-        if reply_to:
-            await reply_to.reply_text(f"❌ Ошибка боя: {e}")
-        return None, None, None, None
-
-    return player_attack, enemy_attack, companion_attack, finished
 
 # ─── Multiplayer turn system ─────────────────────────────────
 
@@ -1188,6 +787,7 @@ async def _advance_turn(context, session: RaidSession):
 
         if turn["type"] == "player":
             session.turn_pending_uid = turn["uid"]
+            enc.turn_timeout_deadline = time.time() + TURN_TIMEOUT
             await _save_session(context, session)
             notif = _build_turn_notification(session, enc, turn)
             try:
@@ -1224,9 +824,11 @@ def _build_turn_notification(session: RaidSession, enc: RaidEncounter, turn: dic
     mob_name = enc.enemy_template["name"]
     hp_perc = int(enc.enemy_hp / max(enc.enemy_max_hp, 1) * 100)
     bar = "▓" * (hp_perc // 10) + "░" * (10 - hp_perc // 10)
+    remaining = max(0, int(enc.turn_timeout_deadline - time.time())) if enc.turn_timeout_deadline else TURN_TIMEOUT
     return (
         f"⚔️ **Раунд {enc.round_number + 1} — ваш ход, {name}!**\n\n"
         f"👾 {mob_name} ❤️ {enc.enemy_hp}/{enc.enemy_max_hp}\n{bar}\n\n"
+        f"⏰ {remaining} сек на ход\n"
         f"✏️ Напишите, что делает ваш персонаж."
     )
 
@@ -1405,6 +1007,37 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Бросаем инициативу…"
     )
     await _advance_turn(context, session)
+
+# ═══════════════════════════════════════════════════════════════
+# /forfeit — сдаться в рейде
+# ═══════════════════════════════════════════════════════════════
+
+async def cmd_forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сдаться и покинуть текущий рейд (фейл рейда для соло)."""
+    session = await _get_session(context)
+    if not session or session.status != RaidStatus.IN_PROGRESS:
+        char = await _get_char(update.effective_user.id, context)
+        if char and char.in_raid:
+            char.in_raid = False
+            char.release_companion()
+            await _save_char(char)
+        await _reply(update, "Нет активного рейда. /location чтобы начать.")
+        return
+    char = await _get_char(update.effective_user.id, context)
+    if char:
+        char.in_raid = False
+        char.release_companion()
+        char.mark_raid_done()
+        char.hp = char.max_hp
+        await _save_char(char)
+    if len(session.participant_names) <= 1:
+        session.status = RaidStatus.FAILED
+        _cleanup_raid(context)
+        await _reply(update, "🏳️ Вы сдались! Рейд провален.", reply_markup=main_menu())
+    else:
+        _cleanup_raid(context)
+        await _notify_participants(context, session, "🏳️ Один из участников сдался. Рейд завершён.", main_menu())
+        await _reply(update, "🏳️ Вы сдались!", reply_markup=main_menu())
 
 # ═══════════════════════════════════════════════════════════════
 # Callback: рейд — сбежать
@@ -1825,24 +1458,41 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ═══════════════════════════════════════════════════════════════
 
 def register_handlers(app: Application):
-    app.add_handler(CommandHandler("menu", cmd_menu))
-    app.add_handler(CommandHandler("start", cmd_menu))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("create", cmd_create))
-    app.add_handler(CommandHandler("skip", cmd_skip))
-    app.add_handler(CommandHandler("profile", cmd_profile))
-    app.add_handler(CommandHandler("inventory", cmd_inventory))
-    app.add_handler(CommandHandler("characters", cmd_characters))
-    app.add_handler(CommandHandler("location", cmd_location))
-    app.add_handler(CommandHandler("market", cmd_market))
-    app.add_handler(CommandHandler("raid", cmd_raid))
-    app.add_handler(CommandHandler("admin", cmd_admin))
-    app.add_handler(CommandHandler("debug", cmd_debug))
-    app.add_handler(CommandHandler("set_level", cmd_set_level))
-    app.add_handler(CommandHandler("add_gold", cmd_add_gold))
-    app.add_handler(CommandHandler("add_exp", cmd_add_exp))
-    app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown))
-    app.add_handler(CommandHandler("toprpg", cmd_toprpg))
+    app.add_handler(CommandHandler("menu", cmd_menu, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("start", cmd_menu, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("help", cmd_help, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("create", cmd_create, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("skip", cmd_skip, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("profile", cmd_profile, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("inventory", cmd_inventory, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("characters", cmd_characters, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("location", cmd_location, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("market", cmd_market, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("raid", cmd_raid, filters=ALLOWED_CHAT_FILTER))
+    app.add_handler(CommandHandler("forfeit", cmd_forfeit, filters=ALLOWED_CHAT_FILTER))
+    app.add_handler(CommandHandler("admin", cmd_admin, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("debug", cmd_debug, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("set_level", cmd_set_level, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("add_gold", cmd_add_gold, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("add_exp", cmd_add_exp, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("toprpg", cmd_toprpg, filters=ALLOWED_CHAT_FILTER))
 
     app.add_handler(CallbackQueryHandler(cb_main_menu, pattern=r"^main_menu$"))
     app.add_handler(CallbackQueryHandler(cb_profile, pattern=r"^profile$"))
@@ -1885,4 +1535,4 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(cb_char_delete_confirm, pattern=r"^char_del_yes_"))
     app.add_handler(CallbackQueryHandler(cb_char_delete, pattern=r"^char_del_"))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ALLOWED_CHAT_FILTER, handle_text))

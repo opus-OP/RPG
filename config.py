@@ -17,6 +17,12 @@ DATA_DIR.mkdir(exist_ok=True)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+# Чат-ID для группового чата, где разрешена работа бота (опционально).
+# Если не задан — бот работает только в ЛС.
+ALLOWED_CHAT_ID = os.getenv("ALLOWED_CHAT_ID")
+if ALLOWED_CHAT_ID is not None:
+    ALLOWED_CHAT_ID = int(ALLOWED_CHAT_ID)
+
 # ═══════════════════════════════════════════════════════════════
 # База данных (SQLite + aiosqlite)
 # ═══════════════════════════════════════════════════════════════
@@ -65,6 +71,7 @@ RAID_GROUP_CREATE_TIMEOUT = 600        # таймаут создания гру�
 RAID_GROUP_JOIN_TIMEOUT = 120          # таймаут присоединения (сек)
 RAID_COOLDOWN_HOURS = 0.1              # кулдаун между рейдами (часы)
 
+TURN_TIMEOUT = 120              # таймаут хода игрока в рейде (сек)
 MARKET_COMMISSION = 0.05        # комиссия аукциона (5%)
 REPAIR_ENABLED = False          # разрешён ли ремонт предметов
 DEATH_DURABILITY_LOSS = 0.10    # потеря прочности экипировки при смерти (10%)

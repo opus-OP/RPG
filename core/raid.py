@@ -71,6 +71,7 @@ class RaidEncounter:
     initiative_order: list[dict] = field(default_factory=list)
     current_turn_index: int = 0
     round_number: int = 0
+    turn_timeout_deadline: float = 0.0
 
 
 @dataclass
@@ -120,6 +121,7 @@ def raid_encounter_to_dict(enc: RaidEncounter) -> dict:
         "initiative_order": enc.initiative_order,
         "current_turn_index": enc.current_turn_index,
         "round_number": enc.round_number,
+        "turn_timeout_deadline": enc.turn_timeout_deadline,
     }
 
 
@@ -137,6 +139,7 @@ def raid_encounter_from_dict(d: dict) -> RaidEncounter:
         initiative_order=d.get("initiative_order", []),
         current_turn_index=d.get("current_turn_index", 0),
         round_number=d.get("round_number", 0),
+        turn_timeout_deadline=d.get("turn_timeout_deadline", 0.0),
     )
 
 
@@ -149,7 +152,7 @@ def session_to_dict(session: RaidSession) -> dict:
         "total_exp": session.total_exp,
         "total_gold": session.total_gold,
         "group_id": session.group_id,
-        "participant_names": session.participant_names,
+        "participant_names": {str(k): v for k, v in session.participant_names.items()},
         "active_buffs": session.active_buffs,
         "used_event_ids": list(session.used_event_ids),
         "turn_pending_uid": session.turn_pending_uid,

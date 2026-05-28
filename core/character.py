@@ -140,7 +140,7 @@ class Character:
             total += val
         if isinstance(total, float) and attr not in ("defense_bonus", "hp_bonus"):
             return total
-        return int(total) if attr in ("defense_bonus", "hp_bonus", "atk_bonus") else total
+        return int(total) if attr in ("defense_bonus", "hp_bonus") else total
 
     def _item_stats(self) -> StatBlock:
         total = StatBlock()
