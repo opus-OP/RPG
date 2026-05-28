@@ -1417,8 +1417,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          "/add_gold N — добавить золото\n"
                          "/add_exp N — добавить опыт\n"
                          "/reset_cooldown — сбросить таймер рейда\n"
-                         "/allow_chat <id> — разрешённый чат (0 = только ЛС)\n"
-                         "/allow_topic <id> — разрешённый топик (0 = все)")
+                         "/set_here — разрешить бота в этом чате/топике")
 
 
 async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
@@ -1539,38 +1538,24 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
 
 
-async def cmd_allow_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_set_here(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("admin"):
-        await _reply(update, "Доступ запрещён.")
+        await _reply(update, "Доступ запрещён. Сначала /admin <пароль> в ЛС.")
         return
-    args = context.args
-    if not args:
-        await _reply(update, "/allow_chat <chat_id>  — 0 = только ЛС")
+    chat = update.effective_chat
+    if chat is None or chat.type == "private":
+        await _reply(update, "Эта команда работает только в групповом чате.")
         return
-    try:
-        chat_id = int(args[0])
-    except ValueError:
-        await _reply(update, "ID чата должен быть числом.")
-        return
-    await _save_setting("allowed_chat_id", str(chat_id) if chat_id else "")
-    await _reply(update, f"✅ Разрешённый чат: {chat_id if chat_id else 'только ЛС'}")
-
-
-async def cmd_allow_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("admin"):
-        await _reply(update, "Доступ запрещён.")
-        return
-    args = context.args
-    if not args:
-        await _reply(update, "/allow_topic <topic_id>  — 0 = все топики")
-        return
-    try:
-        topic_id = int(args[0])
-    except ValueError:
-        await _reply(update, "ID топика должен быть числом.")
-        return
-    await _save_setting("allowed_topic_id", str(topic_id) if topic_id else "")
-    await _reply(update, f"✅ Разрешённый топик: {topic_id if topic_id else 'все топики'}")
+    chat_id = chat.id
+    msg = update.effective_message
+    topic_id = msg.message_thread_id if (msg and msg.is_topic_message) else None
+    await _save_setting("allowed_chat_id", str(chat_id))
+    if topic_id:
+        await _save_setting("allowed_topic_id", str(topic_id))
+        await _reply(update, f"✅ Бот будет отвечать только в этом топике (чат {chat_id}, топик {topic_id}).")
+    else:
+        await _save_setting("allowed_topic_id", "")
+        await _reply(update, f"✅ Бот будет отвечать во всём чате {chat_id}.")
 
 # ═══════════════════════════════════════════════════════════════
 # cb_stat_alloc — распределение очков характеристик
@@ -1882,9 +1867,7 @@ def register_handlers(app: Application):
 
     app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown, filters=ALLOWED_CHAT_FILTER))
 
-    app.add_handler(CommandHandler("allow_chat", cmd_allow_chat, filters=ALLOWED_CHAT_FILTER))
-
-    app.add_handler(CommandHandler("allow_topic", cmd_allow_topic, filters=ALLOWED_CHAT_FILTER))
+    app.add_handler(CommandHandler("set_here", cmd_set_here))
 
     app.add_handler(CommandHandler("toprpg", cmd_toprpg, filters=ALLOWED_CHAT_FILTER))
 
