@@ -17,6 +17,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 
+import config
 from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
