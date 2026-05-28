@@ -171,7 +171,7 @@ def _encounter_header(cur: int, total: int, enc, char: Character, uid: int = 0) 
 def _slot_item(char: Character, slot: str) -> str:
     item = getattr(char.equipment, slot, None)
     if item:
-        return f"{item.name} [{item.rarity.value}]"
+        return f"{item.name} ({item.rarity.value})"
     return "пусто"
 
 
@@ -533,7 +533,7 @@ async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listi
     start = page * per_page
     batch = listings[start:start + per_page]
     for i, listing in enumerate(batch, start=start + 1):
-        text += f"\n{i}. {listing.item.name} [{listing.item.rarity.value}] — {listing.price}💰"
+        text += f"\n{i}. {listing.item.name} ({listing.item.rarity.value}) — {listing.price}💰"
     await _reply(update, text, reply_markup=market_listings_kb(listings, page))
 
 # ═══════════════════════════════════════════════════════════════
@@ -573,7 +573,7 @@ async def _reward_all_participants(session: RaidSession, location, context) -> l
         await _save_char(char)
         loot_text = ""
         if loot:
-            loot_text = " 🎁 " + ", ".join(f"{it.name} [{it.rarity.value}]" for it in loot)
+            loot_text = " 🎁 " + ", ".join(f"{it.name} ({it.rarity.value})" for it in loot)
         results.append((char.name, loot_text))
         try:
             await context.bot.send_message(
@@ -1417,7 +1417,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          "/add_gold N — добавить золото\n"
                          "/add_exp N — добавить опыт\n"
                          "/reset_cooldown — сбросить таймер рейда\n"
-                         "/set_here — разрешить бота в этом чате/топике")
+                         "/set_here — разрешить бота в этом чате/топике",
+                parse_mode=None)
 
 
 async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
@@ -1463,13 +1464,13 @@ async def cmd_set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/set_level <число> [@тег]")
+        await _reply(update, "/set_level <число> (@тег)")
         return
     try:
         lvl_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
         lvl = int(lvl_str)
     except (ValueError, IndexError):
-        await _reply(update, "/set_level <число> [@тег]")
+        await _reply(update, "/set_level <число> (@тег)")
         return
     char = await _resolve_target_char(update, context, args)
     if not char:
@@ -1487,13 +1488,13 @@ async def cmd_add_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/add_gold <число> [@тег]")
+        await _reply(update, "/add_gold <число> (@тег)")
         return
     try:
         amt_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
         amount = int(amt_str)
     except (ValueError, IndexError):
-        await _reply(update, "/add_gold <число> [@тег]")
+        await _reply(update, "/add_gold <число> (@тег)")
         return
     char = await _resolve_target_char(update, context, args)
     if not char:
@@ -1509,13 +1510,13 @@ async def cmd_add_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args:
-        await _reply(update, "/add_exp <число> [@тег]")
+        await _reply(update, "/add_exp <число> (@тег)")
         return
     try:
         amt_str = args[0] if not args[0].startswith("@") else args[1] if len(args) > 1 else ""
         amount = int(amt_str)
     except (ValueError, IndexError):
-        await _reply(update, "/add_exp <число> [@тег]")
+        await _reply(update, "/add_exp <число> (@тег)")
         return
     char = await _resolve_target_char(update, context, args)
     if not char:
