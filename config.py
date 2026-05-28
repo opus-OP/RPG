@@ -72,7 +72,6 @@ RAID_GROUP_JOIN_TIMEOUT = 120          # таймаут присоединени
 RAID_COOLDOWN_HOURS = 0.1              # кулдаун между рейдами (часы)
 
 TURN_TIMEOUT = 120              # таймаут хода игрока в рейде (сек)
-NASH_TOPIC_ID = 68553           # ID топика (подканала) в группе
 MARKET_COMMISSION = 0.05        # комиссия аукциона (5%)
 REPAIR_ENABLED = False          # разрешён ли ремонт предметов
 DEATH_DURABILITY_LOSS = 0.10    # потеря прочности экипировки при смерти (10%)

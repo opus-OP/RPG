@@ -87,6 +87,10 @@ class Storage:
                 raid_id TEXT PRIMARY KEY,
                 data TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         """)
         await self._conn.commit()
 
@@ -244,6 +248,24 @@ class Storage:
                     if p.get("owner_tg_id") == user_id:
                         return data
         return None
+
+    # ─── Настройки ────────────────────────────────────────────
+
+    async def get_setting(self, key: str, default: str = "") -> str:
+        cursor = await self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        )
+        row = await cursor.fetchone()
+        return row["value"] if row else default
+
+    async def set_setting(self, key: str, value: str):
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        await self._conn.commit()
+
+    # ─── Управление ──────────────────────────────────────────
 
     async def load_all_characters(self) -> list[tuple[int, Character]]:
         cursor = await self._conn.execute("SELECT owner_tg_id, data FROM characters")

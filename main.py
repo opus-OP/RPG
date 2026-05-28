@@ -12,7 +12,7 @@ from telegram.ext import ApplicationBuilder
 import config
 from data.storage import storage
 from core.economy import MARKET
-from bot.handlers import register_handlers
+from bot.handlers import register_handlers, _load_settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,8 +22,9 @@ log = logging.getLogger("rpg")
 
 
 async def post_init(app):
-    """Инициализация после создания приложения: БД + рынок."""
+    """Инициализация после создания приложения: БД + рынок + настройки."""
     await storage.connect()
+    await _load_settings()
     await MARKET.load_from_storage(storage)
     log.info(f"БД готова: {storage.db_path}, загружено объявлений: {len(MARKET.listings)}")
     log.info("Бот запущен. Ожидание команд...")

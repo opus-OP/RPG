@@ -21,7 +21,7 @@ from telegram.ext import (
 from telegram.ext.filters import MessageFilter
 
 import config
-from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT, NASH_TOPIC_ID
+from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
@@ -43,6 +43,33 @@ from bot.keyboards import (
 
 log = logging.getLogger("rpg.handlers")
 
+# Динамические настройки (загружаются из БД, могут быть перезаписаны админом)
+_allowed_chat_id: Optional[int] = config.ALLOWED_CHAT_ID
+_allowed_topic_id: Optional[int] = None
+_settings_loaded: bool = False
+
+
+async def _load_settings():
+    global _allowed_chat_id, _allowed_topic_id, _settings_loaded
+    if _settings_loaded:
+        return
+    _settings_loaded = True
+    raw_chat = await storage.get_setting("allowed_chat_id", "")
+    raw_topic = await storage.get_setting("allowed_topic_id", "")
+    if raw_chat:
+        _allowed_chat_id = int(raw_chat)
+    if raw_topic:
+        _allowed_topic_id = int(raw_topic)
+
+
+async def _save_setting(key: str, value: str):
+    global _allowed_chat_id, _allowed_topic_id
+    await storage.set_setting(key, value)
+    if key == "allowed_chat_id":
+        _allowed_chat_id = int(value) if value else config.ALLOWED_CHAT_ID
+    elif key == "allowed_topic_id":
+        _allowed_topic_id = int(value) if value else None
+
 
 class _ChatTopicFilter(MessageFilter):
     """Пропускает ЛС и сообщения из указанного топика группы."""
@@ -51,9 +78,11 @@ class _ChatTopicFilter(MessageFilter):
         chat = message.chat
         if chat.type == "private":
             return True
-        if config.ALLOWED_CHAT_ID is not None and chat.id == config.ALLOWED_CHAT_ID:
+        if _allowed_chat_id is not None and chat.id == _allowed_chat_id:
             if message.is_topic_message:
-                return message.message_thread_id == NASH_TOPIC_ID
+                if _allowed_topic_id is not None:
+                    return message.message_thread_id == _allowed_topic_id
+                return True
             return False
         return False
 
@@ -79,10 +108,12 @@ def _chat_allowed(update: Update) -> bool:
         return False
     if chat.type == "private":
         return True
-    if config.ALLOWED_CHAT_ID is not None and chat.id == config.ALLOWED_CHAT_ID:
+    if _allowed_chat_id is not None and chat.id == _allowed_chat_id:
         msg = update.effective_message
         if msg and msg.is_topic_message:
-            return msg.message_thread_id == NASH_TOPIC_ID
+            if _allowed_topic_id is not None:
+                return msg.message_thread_id == _allowed_topic_id
+            return True
         return False
     return False
 
@@ -1379,12 +1410,15 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "Неверный пароль.")
         return
     context.user_data["admin"] = True
+    await _load_settings()
     await _reply(update, "🔧 Режим администратора активирован.\n"
                          "/debug — меню отладки\n"
                          "/set_level N — установить уровень\n"
                          "/add_gold N — добавить золото\n"
                          "/add_exp N — добавить опыт\n"
-                         "/reset_cooldown — сбросить таймер рейда")
+                         "/reset_cooldown — сбросить таймер рейда\n"
+                         "/allow_chat <id> — разрешённый чат (0 = только ЛС)\n"
+                         "/allow_topic <id> — разрешённый топик (0 = все)")
 
 
 async def _resolve_target_char(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list[str]) -> Optional[Character]:
@@ -1503,6 +1537,40 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     char.last_raid_time = 0.0
     await _save_char(char)
     await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
+
+
+async def cmd_allow_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    args = context.args
+    if not args:
+        await _reply(update, "/allow_chat <chat_id>  — 0 = только ЛС")
+        return
+    try:
+        chat_id = int(args[0])
+    except ValueError:
+        await _reply(update, "ID чата должен быть числом.")
+        return
+    await _save_setting("allowed_chat_id", str(chat_id) if chat_id else "")
+    await _reply(update, f"✅ Разрешённый чат: {chat_id if chat_id else 'только ЛС'}")
+
+
+async def cmd_allow_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("admin"):
+        await _reply(update, "Доступ запрещён.")
+        return
+    args = context.args
+    if not args:
+        await _reply(update, "/allow_topic <topic_id>  — 0 = все топики")
+        return
+    try:
+        topic_id = int(args[0])
+    except ValueError:
+        await _reply(update, "ID топика должен быть числом.")
+        return
+    await _save_setting("allowed_topic_id", str(topic_id) if topic_id else "")
+    await _reply(update, f"✅ Разрешённый топик: {topic_id if topic_id else 'все топики'}")
 
 # ═══════════════════════════════════════════════════════════════
 # cb_stat_alloc — распределение очков характеристик
@@ -1813,6 +1881,10 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("add_exp", cmd_add_exp, filters=ALLOWED_CHAT_FILTER))
 
     app.add_handler(CommandHandler("reset_cooldown", cmd_reset_cooldown, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("allow_chat", cmd_allow_chat, filters=ALLOWED_CHAT_FILTER))
+
+    app.add_handler(CommandHandler("allow_topic", cmd_allow_topic, filters=ALLOWED_CHAT_FILTER))
 
     app.add_handler(CommandHandler("toprpg", cmd_toprpg, filters=ALLOWED_CHAT_FILTER))
 
