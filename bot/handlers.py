@@ -1456,6 +1456,28 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
 
 # ═══════════════════════════════════════════════════════════════
+# cb_stat_alloc — распределение очков характеристик
+# ═══════════════════════════════════════════════════════════════
+
+async def cb_stat_alloc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    attr_map = {"stat_str": "strength", "stat_agi": "agility", "stat_int": "intelligence"}
+    attr = attr_map.get(query.data)
+    if not attr:
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Нет персонажа.")
+        return
+    if not char.allocate_stat(attr):
+        await query.edit_message_text("Нет очков для распределения.")
+        return
+    await _save_char(char)
+    await cmd_profile(update, context)
+
+# ═══════════════════════════════════════════════════════════════
 # Missing callbacks: profile / inventory / location / market / char list / class select / location select / raid / lobby
 # ═══════════════════════════════════════════════════════════════
 
