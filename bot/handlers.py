@@ -8,6 +8,7 @@
 import time
 import uuid
 import logging
+import functools
 from secrets import token_hex
 from typing import Optional
 
@@ -17,9 +18,10 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
 )
+from telegram.ext.filters import MessageFilter
 
 import config
-from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
+from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT, NASH_TOPIC_ID
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
@@ -41,9 +43,34 @@ from bot.keyboards import (
 
 log = logging.getLogger("rpg.handlers")
 
-ALLOWED_CHAT_FILTER = filters.ChatType.PRIVATE
-if config.ALLOWED_CHAT_ID is not None:
-    ALLOWED_CHAT_FILTER = ALLOWED_CHAT_FILTER | filters.Chat(chat_id=config.ALLOWED_CHAT_ID)
+
+class _ChatTopicFilter(MessageFilter):
+    """Пропускает ЛС и сообщения из указанного топика группы."""
+
+    def filter(self, message):
+        chat = message.chat
+        if chat.type == "private":
+            return True
+        if config.ALLOWED_CHAT_ID is not None and chat.id == config.ALLOWED_CHAT_ID:
+            if message.is_topic_message:
+                return message.message_thread_id == NASH_TOPIC_ID
+            return False
+        return False
+
+
+ALLOWED_CHAT_FILTER = _ChatTopicFilter()
+
+
+def _auth_cb(fn):
+    """Декоратор для callback-хендлеров: проверяет _chat_allowed перед выполнением."""
+    @functools.wraps(fn)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not _chat_allowed(update):
+            if update.callback_query:
+                await update.callback_query.answer()
+            return
+        return await fn(update, context)
+    return wrapper
 
 
 def _chat_allowed(update: Update) -> bool:
@@ -53,7 +80,10 @@ def _chat_allowed(update: Update) -> bool:
     if chat.type == "private":
         return True
     if config.ALLOWED_CHAT_ID is not None and chat.id == config.ALLOWED_CHAT_ID:
-        return True
+        msg = update.effective_message
+        if msg and msg.is_topic_message:
+            return msg.message_thread_id == NASH_TOPIC_ID
+        return False
     return False
 
 
@@ -479,6 +509,7 @@ async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listi
 # Callback: главное меню
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _chat_allowed(update):
         return
@@ -564,6 +595,7 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
     await query.edit_message_text(_encounter_header(cur, total, enc, char, uid), reply_markup=raid_actions())
 
 
+@_auth_cb
 async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -593,6 +625,7 @@ async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@_auth_cb
 async def cb_raid_cancel_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -877,6 +910,7 @@ async def _encounter_ended(
 # Callback: рейд — следующий враг
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1045,6 +1079,7 @@ async def cmd_forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Callback: рейд — сбежать
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1067,6 +1102,7 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Callback: инвентарь — страницы + предмет
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_inv_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1077,6 +1113,7 @@ async def cb_inv_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _show_inventory(update, context, char, page)
 
 
+@_auth_cb
 async def cb_inv_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1114,6 +1151,7 @@ async def cb_inv_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=item_actions_kb(item_uid))
 
 
+@_auth_cb
 async def cb_inv_equip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1134,6 +1172,7 @@ async def cb_inv_equip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"✅ {item.name} экипирован!", reply_markup=main_menu())
 
 
+@_auth_cb
 async def cb_inv_unequip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1159,6 +1198,7 @@ async def cb_inv_unequip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"📦 {item.name} снят!", reply_markup=main_menu())
 
 
+@_auth_cb
 async def cb_inv_drop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1176,6 +1216,7 @@ async def cb_inv_drop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"🗑 {item.name} выброшен.", reply_markup=main_menu())
 
 
+@_auth_cb
 async def cb_inv_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1195,6 +1236,7 @@ async def cb_inv_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Callback: рынок — страницы + покупка
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_market_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1203,6 +1245,7 @@ async def cb_market_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _show_market(update, context, listings, page)
 
 
+@_auth_cb
 async def cb_market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1219,6 +1262,7 @@ async def cb_market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=market_confirm(lid))
 
 
+@_auth_cb
 async def cb_market_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1250,6 +1294,7 @@ async def cb_market_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"✅ Куплен {item.name} за {listing.price}💰", reply_markup=main_menu())
 
 
+@_auth_cb
 async def cb_market_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1266,12 +1311,14 @@ async def cb_market_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Callback: управление персонажами
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_char_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_create(update, context)
 
 
+@_auth_cb
 async def cb_char_switch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1286,6 +1333,7 @@ async def cb_char_switch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"✅ Переключено на **{target.name}**", reply_markup=main_menu())
 
 
+@_auth_cb
 async def cb_char_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1302,6 +1350,7 @@ async def cb_char_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@_auth_cb
 async def cb_char_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1459,6 +1508,7 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # cb_stat_alloc — распределение очков характеристик
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_stat_alloc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1481,26 +1531,31 @@ async def cb_stat_alloc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Missing callbacks: profile / inventory / location / market / char list / class select / location select / raid / lobby
 # ═══════════════════════════════════════════════════════════════
 
+@_auth_cb
 async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_profile(update, context)
 
+@_auth_cb
 async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_inventory(update, context)
 
+@_auth_cb
 async def cb_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_location(update, context)
 
+@_auth_cb
 async def cb_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_market(update, context)
 
+@_auth_cb
 async def cb_market_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1510,11 +1565,13 @@ async def cb_market_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await _show_market(update, context, listings, 0)
 
+@_auth_cb
 async def cb_char_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await cmd_characters(update, context)
 
+@_auth_cb
 async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1533,6 +1590,7 @@ async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await _finish_creation(update, context, state)
 
+@_auth_cb
 async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1559,6 +1617,7 @@ async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     await query.edit_message_text(text, reply_markup=confirm_raid(loc_key))
 
+@_auth_cb
 async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1591,6 +1650,7 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await _advance_turn(context, session)
 
+@_auth_cb
 async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1613,6 +1673,7 @@ async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TY
     text = raid_lobby_text(loc.name, code, [(uid, char.name)])
     await query.edit_message_text(text, reply_markup=raid_lobby(loc.name, code, [(uid, char.name)], True))
 
+@_auth_cb
 async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1660,6 +1721,7 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(f"⚔️ Рейд начат! Участников: {len(chars)}")
     await _advance_turn(context, session)
 
+@_auth_cb
 async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
