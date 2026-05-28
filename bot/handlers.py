@@ -8,6 +8,7 @@
 import time
 import uuid
 import logging
+from secrets import token_hex
 from typing import Optional
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -18,7 +19,7 @@ from telegram.ext import (
 )
 
 import config
-from config import MAX_CHARACTERS_PER_PLAYER, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
+from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DURABILITY_LOSS_PERCENT, DEATH_DURABILITY_LOSS, TURN_TIMEOUT
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
@@ -1453,6 +1454,242 @@ async def cmd_reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE)
     char.last_raid_time = 0.0
     await _save_char(char)
     await _reply(update, f"✅ {char.name}: кулдаун рейда сброшен.")
+
+# ═══════════════════════════════════════════════════════════════
+# Missing callbacks: profile / inventory / location / market / char list / class select / location select / raid / lobby
+# ═══════════════════════════════════════════════════════════════
+
+async def cb_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await cmd_profile(update, context)
+
+async def cb_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await cmd_inventory(update, context)
+
+async def cb_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await cmd_location(update, context)
+
+async def cb_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await cmd_market(update, context)
+
+async def cb_market_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    listings = MARKET.get_active_listings()
+    if not listings:
+        await query.edit_message_text("🏪 Рынок пуст.", reply_markup=main_menu())
+        return
+    await _show_market(update, context, listings, 0)
+
+async def cb_char_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await cmd_characters(update, context)
+
+async def cb_class_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    state = context.user_data.get("creation")
+    if not state or state["step"] != "class":
+        await query.edit_message_text("Создание не активно. /create")
+        return
+    class_key = query.data[len("class_"):]
+    if class_key not in CLASSES:
+        await query.edit_message_text("Неверный класс.")
+        return
+    state["class_key"] = class_key
+    if class_key == "leader":
+        state["step"] = "companion_name"
+        await query.edit_message_text("Введите имя стража (или /skip):")
+    else:
+        await _finish_creation(update, context, state)
+
+async def cb_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    loc_key = query.data[len("loc_"):]
+    loc = get_location(loc_key)
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+    char = await _get_char(update.effective_user.id, context)
+    if not char:
+        await query.edit_message_text("Нет персонажа.")
+        return
+    if not char.can_raid():
+        rem = char.raid_cooldown_remaining()
+        hrs = int(rem // 3600)
+        mins = int((rem % 3600) // 60)
+        await query.edit_message_text(f"⏳ Кулдаун рейда: {hrs}ч {mins}м")
+        return
+    text = (
+        f"🗺 **{loc.name}**\n{loc.description}\n\n"
+        f"🎯 Уровень: {loc.recommended_level} | ☠️ {loc.danger}/10\n"
+        f"👾 Врагов: {loc.min_enemies}-{loc.max_enemies}\n"
+        f"💰 {loc.gold_min}-{loc.gold_max} золота | ✨ {loc.exp_reward} опыта"
+    )
+    await query.edit_message_text(text, reply_markup=confirm_raid(loc_key))
+
+async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    loc_key = query.data[len("raid_start_"):]
+    loc = get_location(loc_key)
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Нет персонажа.")
+        return
+    raid_id = f"solo_{uid}_{int(time.time())}"
+    session = create_raid(char, loc, raid_id)
+    chars = {uid: char}
+    enc = session.encounters[0]
+    enc.initiative_order = build_initiative_order(chars, enc)
+    enc.current_turn_index = 0
+    enc.round_number = 0
+    session.status = RaidStatus.IN_PROGRESS
+    session.participant_names = {uid: char.name}
+    char.in_raid = True
+    await _save_char(char)
+    context.user_data["raid"] = session
+    total = len(session.encounters)
+    await query.edit_message_text(
+        f"⚔️ **{loc.name}** — рейд начат!\n"
+        f"Всего врагов: {total}\n\nБросаем инициативу…",
+    )
+    await _advance_turn(context, session)
+
+async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    loc_key = query.data[len("raid_online_"):]
+    loc = get_location(loc_key)
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Нет персонажа.")
+        return
+    code = token_hex(4).upper()
+    context.user_data["lobby"] = {
+        "owner_uid": uid, "location_key": loc_key,
+        "code": code, "participants": [(uid, char.name)],
+        "started": False,
+    }
+    text = raid_lobby_text(loc.name, code, [(uid, char.name)])
+    await query.edit_message_text(text, reply_markup=raid_lobby(loc.name, code, [(uid, char.name)], True))
+
+async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    lobby = context.user_data.get("lobby")
+    if not lobby:
+        await query.edit_message_text("Лобби не найдено.")
+        return
+    if lobby["owner_uid"] != uid:
+        await query.edit_message_text("Только создатель может начать рейд.")
+        return
+    if lobby["started"]:
+        await query.edit_message_text("Рейд уже начат.")
+        return
+    lobby["started"] = True
+    loc = get_location(lobby["location_key"])
+    if not loc:
+        await query.edit_message_text("Локация не найдена.")
+        return
+    raid_id = f"group_{uid}_{int(time.time())}"
+    owner_char = await _get_char(lobby["owner_uid"], context)
+    if not owner_char:
+        await query.edit_message_text("Персонаж не найден.")
+        return
+    group_size = len(lobby["participants"])
+    session = create_raid(owner_char, loc, raid_id, group_id=raid_id, group_size=group_size)
+    chars = {}
+    for puid, pname in lobby["participants"]:
+        pchars = await storage.load_characters(puid)
+        pc = next((c for c in pchars if c.name == pname), None)
+        if pc:
+            chars[puid] = pc
+            pc.in_raid = True
+            await _save_char(pc)
+            session.participant_names[puid] = pname
+    enc = session.encounters[0]
+    enc.initiative_order = build_initiative_order(chars, enc)
+    enc.current_turn_index = 0
+    enc.round_number = 0
+    session.status = RaidStatus.IN_PROGRESS
+    context.user_data["raid_id"] = raid_id
+    await _save_session(context, session)
+    context.user_data.pop("lobby", None)
+    context.user_data["raid"] = session
+    await query.edit_message_text(f"⚔️ Рейд начат! Участников: {len(chars)}")
+    await _advance_turn(context, session)
+
+async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    lobby = context.user_data.get("lobby")
+    if not lobby:
+        await query.edit_message_text("Нет лобби.")
+        return
+    lobby["participants"] = [(puid, pname) for puid, pname in lobby["participants"] if puid != uid]
+    loc = get_location(lobby["location_key"])
+    loc_name = loc.name if loc else "?"
+    if not lobby["participants"]:
+        context.user_data.pop("lobby", None)
+        await query.edit_message_text("Вы покинули лобби.", reply_markup=main_menu())
+        return
+    is_owner = lobby["owner_uid"] == uid
+    if is_owner and lobby["participants"]:
+        lobby["owner_uid"] = lobby["participants"][0][0]
+    text = raid_lobby_text(loc_name, lobby["code"], lobby["participants"])
+    await query.edit_message_text(text, reply_markup=raid_lobby(loc_name, lobby["code"], lobby["participants"], lobby["owner_uid"] == uid))
+
+async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    args = context.args
+    if not args:
+        await _reply(update, "Использование: /raidjoin <код>")
+        return
+    code = args[0].upper()
+    char = await _get_char(uid, context)
+    if not char:
+        await _reply(update, "Нет персонажа.")
+        return
+    if char.in_raid:
+        await _reply(update, "Вы уже в рейде.")
+        return
+    # Search for lobby across all users' context (stored in user_data)
+    # We don't have cross-user access, so lobby must be in this user's context
+    lobby = context.user_data.get("lobby")
+    if not lobby or lobby["code"] != code or lobby["started"]:
+        await _reply(update, "Лобби не найдено или рейд уже начат.")
+        return
+    if len(lobby["participants"]) >= MAX_GROUP_SIZE:
+        await _reply(update, "Лобби заполнено.")
+        return
+    lobby["participants"].append((uid, char.name))
+    loc = get_location(lobby["location_key"])
+    loc_name = loc.name if loc else "?"
+    is_owner = lobby["owner_uid"] == uid
+    await update.message.reply_text(
+        f"✅ Вы присоединились к лобби **{loc_name}**!",
+        reply_markup=raid_lobby(loc_name, lobby["code"], lobby["participants"], is_owner),
+    )
 
 # ═══════════════════════════════════════════════════════════════
 # Регистрация всех хендлеров
