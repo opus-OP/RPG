@@ -382,7 +382,7 @@ def pick_enemy_target(
     chars: dict[int, Character],
 ) -> tuple[int, Character]:
     """Выбирает случайную живую цель для атаки врага."""
-    alive = [(uid, c) for uid, c in chars.items() if c.alive and c.hp > 0 and c.in_raid]
+    alive = [(uid, c) for uid, c in chars.items() if c.alive]
     if not alive:
         return 0, list(chars.values())[0]
     import random as _random
