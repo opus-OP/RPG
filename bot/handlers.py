@@ -549,6 +549,17 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("raid", None)
     context.user_data.pop("raid_id", None)
     context.user_data.pop("raid_action_pending", None)
+    uid = update.effective_user.id
+    chars = await storage.load_characters(uid)
+    if chars:
+        await query.edit_message_text(f"С возвращением, {chars[0].name}!", reply_markup=main_menu())
+    else:
+        await query.edit_message_text(
+            "🎲 Добро пожаловать в RPG!\n"
+            "Здесь нет персонажей — создайте первого:\n\n"
+            "/create — создать персонажа\n"
+            "/help — список команд",
+        )
 
 
 async def _reward_all_participants(session: RaidSession, location, context) -> list[tuple[str, str]]:
@@ -592,6 +603,19 @@ def _cleanup_raid(context):
     context.user_data.pop("raid_action_pending", None)
     context.user_data.pop("raid_msg_chat", None)
     context.user_data.pop("raid_msg_id", None)
+
+
+async def _get_session(context) -> Optional[RaidSession]:
+    """Load raid session from user_data or DB."""
+    session = context.user_data.get("raid")
+    if session is not None:
+        return session
+    raid_id = context.user_data.get("raid_id")
+    if raid_id:
+        data = await storage.load_raid_session(raid_id)
+        if data:
+            return session_from_dict(data)
+    return None
 
 
 async def _save_session(context, session: RaidSession):
