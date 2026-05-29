@@ -863,7 +863,34 @@ async def _resolve_auto_turn(
         if not alive:
             return None
         target_uid, target_char = _random.choice(alive)
-        atk = resolve_enemy_turn(target_char, enemy_obj, enc, None)
+
+        weapon_name = ""
+        weapon_attrs = []
+        if target_char.equipment and target_char.equipment.weapon:
+            weapon_name = target_char.equipment.weapon.name
+            weapon_attrs = target_char.equipment.weapon.attributes
+        s = target_char.stats
+        player_info = {
+            "name": target_char.name, "class": target_char.class_key,
+            "hp": target_char.hp, "max_hp": target_char.max_hp,
+            "weapon": f"{weapon_name} ({', '.join(weapon_attrs)})" if weapon_name else "",
+            "strength": s.strength, "agility": s.agility, "intelligence": s.intelligence,
+        }
+        enemy_info = [{"name": enc.enemy_template["name"], "hp": enc.enemy_hp, "max_hp": enc.enemy_max_hp}]
+
+        enemy_mods = None
+        try:
+            nn = await call_narrative_api(
+                location=session.location_key, turn=enc.turn,
+                player=player_info, enemies=enemy_info,
+                action_history=[], player_action="", mode="enemy_modifiers",
+            )
+            if nn:
+                enemy_mods = nn.get("enemy_actions")
+        except Exception:
+            log.exception("NN enemy_modifiers failed")
+
+        atk = resolve_enemy_turn(target_char, enemy_obj, enc, enemy_mods)
         died = target_char.hp <= 0
         if died:
             target_char.count_raid += 1
@@ -873,10 +900,31 @@ async def _resolve_auto_turn(
             target_char.alive = True
             target_char.hp = target_char.max_hp
         await _save_char(target_char)
+
+        enemy_narrative = ""
+        try:
+            nn = await call_narrative_api(
+                location=session.location_key, turn=enc.turn,
+                player=player_info, enemies=enemy_info,
+                action_history=[], player_action="",
+                damage=atk.final_damage if atk else 0,
+                mode="enemy_narrative",
+            )
+            if nn:
+                enemy_narrative = nn.get("enemy_narrative", "")
+        except Exception:
+            log.exception("NN enemy_narrative failed")
+
+        parts = []
+        if enemy_narrative:
+            parts.append(f"📖 {enemy_narrative}")
         desc = _attack_desc(f"👾 {entry['name']}", atk, "наносит")
         if desc:
-            death = " 💀" if died else ""
-            return f"🎯 **{target_char.name}**: {desc}{death}"
+            parts.append(desc)
+        if not parts:
+            return None
+        death = " 💀" if died else ""
+        return "\n".join(parts) + death
     return None
 
 
