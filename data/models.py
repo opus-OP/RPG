@@ -24,6 +24,7 @@ def item_to_dict(item: Item) -> dict:
         "durability": item.durability,
         "durability_max": item.durability_max,
         "attributes": item.attributes,
+        "icon": item.icon,
     }
     td = item.template
     d["template_data"] = {
@@ -82,6 +83,7 @@ def item_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Optional[I
         durability=data.get("durability", tpl.durability_max),
         durability_max=data.get("durability_max", tpl.durability_max),
         attributes=data.get("attributes", []),
+        icon=data.get("icon", ""),
     )
 
 

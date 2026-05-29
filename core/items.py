@@ -93,6 +93,7 @@ class Item:
     durability: int
     durability_max: int
     attributes: list[str] = field(default_factory=list)
+    icon: str = ""
 
     @property
     def name(self) -> str:

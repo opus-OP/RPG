@@ -966,7 +966,7 @@ async def _advance_turn(context, session: RaidSession):
 
     if parts:
         full = "\n".join(parts)
-        await _notify_participants(context, session, full, raid_actions())
+        await _notify_participants(context, session, full)
 
     if enc.finished:
         await _encounter_ended(context, session, enc, query=None)
