@@ -965,16 +965,7 @@ async def _advance_turn(context, session: RaidSession):
         advance_turn_core(enc)
 
     if parts:
-        total = len(session.encounters)
-        cur = session.current_encounter + 1
-        part_chars = await _get_participant_chars(context, session)
-        first_uid = next(iter(session.participant_names.keys()))
-        first_char = part_chars.get(first_uid)
-        if first_char:
-            header = _encounter_header(cur, total, enc, first_char, first_uid)
-        else:
-            header = f"⚔️ Рейд {cur}/{total}"
-        full = f"{header}\n\n" + "\n".join(parts)
+        full = "\n".join(parts)
         await _notify_participants(context, session, full, raid_actions())
 
     if enc.finished:
