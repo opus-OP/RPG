@@ -596,13 +596,6 @@ async def _reward_all_participants(session: RaidSession, location, context) -> l
         if loot:
             loot_text = " 🎁 " + ", ".join(f"{it.name} ({it.rarity.value})" for it in loot)
         results.append((char.name, loot_text))
-        try:
-            await context.bot.send_message(
-                uid, f"🏆 **Рейд пройден!**{loot_text}",
-                reply_markup=raid_done(),
-            )
-        except Exception:
-            pass
     return results
 
 
@@ -1095,13 +1088,14 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session.status = RaidStatus.COMPLETED
             rewards = await _reward_all_participants(session, loc, context)
             _cleanup_raid(context)
-            my_reward = next((r for r in rewards if r[0] == char.name), None)
-            text = "🏆 **Рейд пройден!**"
-            if my_reward:
-                text += my_reward[1]
+            loot_lines = ["🏆 **Рейд пройден!**"]
+            for rname, rtext in rewards:
+                loot_lines.append(f"• {rname}: {rtext}")
+            text = "\n".join(loot_lines)
             if event_text:
                 text = f"{event_text}\n\n{text}"
             await query.edit_message_text(text, reply_markup=raid_done())
+            await _notify_participants(context, session, text, raid_done())
         else:
             await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
         return
