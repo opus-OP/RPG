@@ -525,6 +525,7 @@ async def cmd_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(_encounter_header(cur, total, enc, char, update.effective_user.id), reply_markup=raid_actions())
     context.user_data["raid_msg_chat"] = msg.chat_id
     context.user_data["raid_msg_id"] = msg.message_id
+    context.user_data["raid_msg_thread"] = msg.message_thread_id
 
 
 async def _show_market(update: Update, context: ContextTypes.DEFAULT_TYPE, listings: list, page: int):
@@ -603,6 +604,7 @@ def _cleanup_raid(context):
     context.user_data.pop("raid_action_pending", None)
     context.user_data.pop("raid_msg_chat", None)
     context.user_data.pop("raid_msg_id", None)
+    context.user_data.pop("raid_msg_thread", None)
 
 
 async def _get_session(context) -> Optional[RaidSession]:
@@ -630,12 +632,16 @@ async def _save_session(context, session: RaidSession):
 async def _notify_participants(context, session: RaidSession, text: str, kb=None):
     """Notify all participants of a raid — send to raid chat (or PM fallback)."""
     chat_id = context.user_data.get("raid_msg_chat")
+    thread_id = context.user_data.get("raid_msg_thread")
     if chat_id:
         try:
+            kwargs = {}
+            if thread_id:
+                kwargs["message_thread_id"] = thread_id
             if kb:
-                await context.bot.send_message(chat_id, text, reply_markup=kb)
+                await context.bot.send_message(chat_id, text, reply_markup=kb, **kwargs)
             else:
-                await context.bot.send_message(chat_id, text)
+                await context.bot.send_message(chat_id, text, **kwargs)
         except Exception:
             pass
         return
@@ -654,6 +660,7 @@ async def _show_encounter(query, context, char: Character, session: RaidSession)
     enc = session.encounters[session.current_encounter]
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
+    context.user_data["raid_msg_thread"] = query.message.message_thread_id
     total = len(session.encounters)
     cur = session.current_encounter + 1
     uid = query.from_user.id if query.from_user else 0
@@ -680,6 +687,7 @@ async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
+    context.user_data["raid_msg_thread"] = query.message.message_thread_id
     context.user_data["raid_action_pending"] = True
     await _save_session(context, session)
     await query.edit_message_text(
@@ -890,9 +898,13 @@ async def _advance_turn(context, session: RaidSession):
             enc.turn_timeout_deadline = time.time() + TURN_TIMEOUT
             await _save_session(context, session)
             chat_id = context.user_data.get("raid_msg_chat") or turn["uid"]
+            thread_id = context.user_data.get("raid_msg_thread")
             notif = _build_turn_notification(session, enc, turn)
+            kwargs = {"reply_markup": raid_actions()}
+            if thread_id:
+                kwargs["message_thread_id"] = thread_id
             try:
-                await context.bot.send_message(chat_id, notif, reply_markup=raid_actions())
+                await context.bot.send_message(chat_id, notif, **kwargs)
             except Exception:
                 pass
             break
@@ -1740,6 +1752,7 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["raid"] = session
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
+    context.user_data["raid_msg_thread"] = query.message.message_thread_id
     total = len(session.encounters)
     await query.edit_message_text(
         f"⚔️ **{loc.name}** — рейд начат!\n"
@@ -1817,6 +1830,7 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["raid"] = session
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
+    context.user_data["raid_msg_thread"] = query.message.message_thread_id
     await query.edit_message_text(f"⚔️ Рейд начат! Участников: {len(chars)}")
     await _advance_turn(context, session)
 
