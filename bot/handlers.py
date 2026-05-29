@@ -965,15 +965,17 @@ async def _encounter_ended(
             loc = get_location(session.location_key)
             if loc:
                 rewards = await _reward_all_participants(session, loc, context)
-                _cleanup_raid(context)
                 loot_lines = ["🏆 **Рейд пройден!**"]
                 for rname, rtext in rewards:
                     loot_lines.append(f"• {rname}: {rtext}")
                 text = "\n".join(loot_lines)
                 if query:
+                    await _notify_participants(context, session, text, raid_done())
+                    _cleanup_raid(context)
                     await query.edit_message_text(msg_text + f"\n\n{text}", reply_markup=raid_done())
                 else:
                     await _notify_participants(context, session, text, raid_done())
+                    _cleanup_raid(context)
             else:
                 err = "⚠️ Ошибка: локация не найдена."
                 if query:
@@ -1087,15 +1089,15 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if loc:
             session.status = RaidStatus.COMPLETED
             rewards = await _reward_all_participants(session, loc, context)
-            _cleanup_raid(context)
             loot_lines = ["🏆 **Рейд пройден!**"]
             for rname, rtext in rewards:
                 loot_lines.append(f"• {rname}: {rtext}")
             text = "\n".join(loot_lines)
             if event_text:
                 text = f"{event_text}\n\n{text}"
-            await query.edit_message_text(text, reply_markup=raid_done())
             await _notify_participants(context, session, text, raid_done())
+            _cleanup_raid(context)
+            await query.edit_message_text(text, reply_markup=raid_done())
         else:
             await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
         return
