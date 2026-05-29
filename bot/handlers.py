@@ -334,6 +334,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         enc = session.encounters[session.current_encounter]
         turn = get_current_turn(enc)
         if turn and turn["type"] == "player" and turn["uid"] == uid:
+            if not context.user_data.get("raid_action_pending"):
+                await update.message.reply_text("Нажмите ⚔️ Действие, чтобы сделать ход.")
+                return
             context.user_data.pop("raid_action_pending", None)
             if enc.turn_timeout_deadline and time.time() > enc.turn_timeout_deadline:
                 await update.message.reply_text("⏰ Ваш ход истёк! Вы промедлили…")
