@@ -44,6 +44,8 @@ from bot.keyboards import (
 
 log = logging.getLogger("rpg.handlers")
 
+_lobbies: dict[str, dict] = {}
+
 # Динамические настройки (загружаются из БД, могут быть перезаписаны админом)
 _allowed_chat_id: Optional[int] = config.ALLOWED_CHAT_ID
 _allowed_topic_id: Optional[int] = None
@@ -464,6 +466,12 @@ async def _show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE, ch
     text = f"🎒 Инвентарь **{char.name}**\n"
     if not char.inventory:
         text += "Пусто."
+    else:
+        start = page * 6
+        items = char.inventory[start:start + 6]
+        for i, item in enumerate(items, start=start + 1):
+            dur = f" ({item.durability}/{item.durability_max})" if hasattr(item, 'durability') and item.durability_max else ""
+            text += f"\n{i}. {item.icon or '📦'} **{item.name}**{dur}"
     await _reply(update, text, reply_markup=inventory_pages(char.inventory, page))
 
 # ═══════════════════════════════════════════════════════════════
@@ -963,8 +971,8 @@ async def _encounter_ended(
             session.status = RaidStatus.COMPLETED
             loc = get_location(session.location_key)
             if loc:
-                _cleanup_raid(context)
                 rewards = await _reward_all_participants(session, loc, context)
+                _cleanup_raid(context)
                 loot_lines = ["🏆 **Рейд пройден!**"]
                 for rname, rtext in rewards:
                     loot_lines.append(f"• {rname}: {rtext}")
@@ -1085,8 +1093,8 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _save_session(context, session)
         if loc:
             session.status = RaidStatus.COMPLETED
-            _cleanup_raid(context)
             rewards = await _reward_all_participants(session, loc, context)
+            _cleanup_raid(context)
             my_reward = next((r for r in rewards if r[0] == char.name), None)
             text = "🏆 **Рейд пройден!**"
             if my_reward:
@@ -1149,9 +1157,12 @@ async def cmd_forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _save_char(char)
     if len(session.participant_names) <= 1:
         session.status = RaidStatus.FAILED
+        await _save_session(context, session)
         _cleanup_raid(context)
         await _reply(update, "🏳️ Вы сдались! Рейд провален.", reply_markup=main_menu())
     else:
+        session.status = RaidStatus.FAILED
+        await _save_session(context, session)
         _cleanup_raid(context)
         await _notify_participants(context, session, "🏳️ Один из участников сдался. Рейд завершён.", main_menu())
         await _reply(update, "🏳️ Вы сдались!", reply_markup=main_menu())
@@ -1176,6 +1187,8 @@ async def cb_raid_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
         char.mark_raid_done()
         char.hp = char.max_hp
         await _save_char(char)
+    session.status = RaidStatus.FAILED
+    await _save_session(context, session)
     _cleanup_raid(context)
     await query.edit_message_text("🏃 Вы сбежали из рейда!", reply_markup=main_menu())
 
@@ -1772,12 +1785,16 @@ async def cb_raid_online_create(update: Update, context: ContextTypes.DEFAULT_TY
     if not char:
         await query.edit_message_text("Нет персонажа.")
         return
+    if not char.can_raid():
+        await query.edit_message_text("Персонаж недоступен (возможно, ещё не прошёл кулдаун после рейда).")
+        return
     code = token_hex(4).upper()
-    context.user_data["lobby"] = {
+    _lobbies[code] = {
         "owner_uid": uid, "location_key": loc_key,
         "code": code, "participants": [(uid, char.name)],
         "started": False,
     }
+    context.user_data["lobby_code"] = code
     text = raid_lobby_text(loc.name, code, [(uid, char.name)])
     await query.edit_message_text(text, reply_markup=raid_lobby(loc.name, code, [(uid, char.name)], True))
 
@@ -1786,7 +1803,8 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     uid = update.effective_user.id
-    lobby = context.user_data.get("lobby")
+    code = context.user_data.get("lobby_code")
+    lobby = _lobbies.get(code) if code else None
     if not lobby:
         await query.edit_message_text("Лобби не найдено.")
         return
@@ -1824,7 +1842,8 @@ async def cb_raid_lobby_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     session.status = RaidStatus.IN_PROGRESS
     context.user_data["raid_id"] = raid_id
     await _save_session(context, session)
-    context.user_data.pop("lobby", None)
+    _lobbies.pop(code, None)
+    context.user_data.pop("lobby_code", None)
     context.user_data["raid"] = session
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
@@ -1837,7 +1856,8 @@ async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     uid = update.effective_user.id
-    lobby = context.user_data.get("lobby")
+    code = context.user_data.get("lobby_code")
+    lobby = _lobbies.get(code) if code else None
     if not lobby:
         await query.edit_message_text("Нет лобби.")
         return
@@ -1845,14 +1865,23 @@ async def cb_raid_lobby_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
     loc = get_location(lobby["location_key"])
     loc_name = loc.name if loc else "?"
     if not lobby["participants"]:
-        context.user_data.pop("lobby", None)
+        _lobbies.pop(code, None)
+        context.user_data.pop("lobby_code", None)
         await query.edit_message_text("Вы покинули лобби.", reply_markup=main_menu())
         return
     is_owner = lobby["owner_uid"] == uid
     if is_owner and lobby["participants"]:
         lobby["owner_uid"] = lobby["participants"][0][0]
     text = raid_lobby_text(loc_name, lobby["code"], lobby["participants"])
-    await query.edit_message_text(text, reply_markup=raid_lobby(loc_name, lobby["code"], lobby["participants"], lobby["owner_uid"] == uid))
+    is_owner = lobby["owner_uid"] == uid
+    await query.edit_message_text(text, reply_markup=raid_lobby(loc_name, lobby["code"], lobby["participants"], is_owner))
+
+
+@_auth_cb
+async def cb_raid_lobby_noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
 
 async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -1868,16 +1897,18 @@ async def cmd_raid_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if char.in_raid:
         await _reply(update, "Вы уже в рейде.")
         return
-    # Search for lobby across all users' context (stored in user_data)
-    # We don't have cross-user access, so lobby must be in this user's context
-    lobby = context.user_data.get("lobby")
-    if not lobby or lobby["code"] != code or lobby["started"]:
+    if not char.can_raid():
+        await _reply(update, "Персонаж недоступен (кулдаун после рейда).")
+        return
+    lobby = _lobbies.get(code)
+    if not lobby or lobby["started"]:
         await _reply(update, "Лобби не найдено или рейд уже начат.")
         return
     if len(lobby["participants"]) >= MAX_GROUP_SIZE:
         await _reply(update, "Лобби заполнено.")
         return
     lobby["participants"].append((uid, char.name))
+    context.user_data["lobby_code"] = code
     loc = get_location(lobby["location_key"])
     loc_name = loc.name if loc else "?"
     is_owner = lobby["owner_uid"] == uid
@@ -1945,6 +1976,7 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(cb_raid_online_create, pattern=r"^raid_online_"))
     app.add_handler(CallbackQueryHandler(cb_raid_lobby_start, pattern=r"^raid_lobby_start$"))
     app.add_handler(CallbackQueryHandler(cb_raid_lobby_leave, pattern=r"^raid_lobby_leave$"))
+    app.add_handler(CallbackQueryHandler(cb_raid_lobby_noop, pattern=r"^raid_lobby_noop$"))
 
     app.add_handler(CallbackQueryHandler(cb_raid_action, pattern=r"^raid_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_cancel_action, pattern=r"^raid_cancel_action$"))
