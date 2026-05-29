@@ -9,6 +9,7 @@ import time
 import uuid
 import logging
 import functools
+import random as _random
 from secrets import token_hex
 from typing import Optional
 
@@ -856,14 +857,10 @@ async def _resolve_auto_turn(
         return _attack_desc(f"🛡 Страж {owner_char.name}", atk)
 
     elif entry["type"] == "enemy":
-        alive = []
         chars = await _get_participant_chars(context, session)
-        for c_uid, c in chars.items():
-            if c.alive and c.hp > 0:
-                alive.append((c_uid, c))
+        alive = [(uid, c) for uid, c in chars.items() if c.alive and c.hp > 0 and c.in_raid]
         if not alive:
             return None
-        import random as _random
         target_uid, target_char = _random.choice(alive)
         atk = resolve_enemy_turn(target_char, enemy_obj, enc, None)
         died = target_char.hp <= 0
@@ -1016,7 +1013,6 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         available = [e for e in loc.events if e["id"] not in session.used_event_ids]
         if not available:
             available = loc.events
-        import random as _random
         raw = _random.choice(available)
         ev = RaidEvent(**raw)
         session.used_event_ids.add(ev.id)
@@ -1043,7 +1039,8 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tpl = get_template(reward.item_template)
             if tpl:
                 new_item = InventoryItem(
-                    template=tpl, uid=f"ev_{uuid.uuid4().hex[:8]}", durability=tpl.durability_max,
+                    template=tpl, uid=f"ev_{uuid.uuid4().hex[:8]}",
+                    durability=tpl.durability_max, durability_max=tpl.durability_max,
                 )
                 char.inventory.append(new_item)
                 parts.append(f"🎒 {new_item.name}")
@@ -1750,6 +1747,7 @@ async def cb_raid_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char.in_raid = True
     await _save_char(char)
     context.user_data["raid"] = session
+    context.user_data["raid_id"] = raid_id
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
     context.user_data["raid_msg_thread"] = query.message.message_thread_id
