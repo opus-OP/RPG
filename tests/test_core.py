@@ -3,7 +3,7 @@ import sys; sys.path.insert(0, ".")
 import pytest
 from core.combat import calc_damage, resolve_turn, AttackResult, StatusEffect, apply_nn_modifiers, BattleState
 from core.raid import resolve_player_turn, resolve_enemy_turn, resolve_companion_turn, build_initiative_order, get_current_turn, advance_turn_core, create_enemy, pick_enemy_target
-from core.events import resolve_event, RaidEvent, EventReward
+from core.events import resolve_event, apply_event_reward, event_from_dict, RaidEvent, EventReward
 from core.items import ItemEffect, ItemTemplate, ItemType, Rarity, Item
 from core.weapon_gen import roll_weapon_from_pattern, find_patterns
 from core.character import Character, Companion
@@ -355,6 +355,160 @@ class TestInitiative:
 
 
 # ─── EVENTS ───────────────────────────────────────────────────────
+
+class TestEventsFromDict:
+    def test_event_from_dict_full(self):
+        data = {
+            "id": "test_ev", "text": "Test event",
+            "attribute": "strength", "dc": 12,
+            "success": {"gold": 50, "heal": 20},
+            "fail": {"damage": 10},
+        }
+        ev = event_from_dict(data)
+        assert ev.id == "test_ev"
+        assert ev.text == "Test event"
+        assert ev.attribute == "strength"
+        assert ev.dc == 12
+        assert isinstance(ev.success, EventReward)
+        assert ev.success.gold == 50
+        assert ev.success.heal == 20
+        assert isinstance(ev.fail, EventReward)
+        assert ev.fail.damage == 10
+
+    def test_event_from_dict_no_fail(self):
+        data = {
+            "id": "test_ev", "text": "Test",
+            "attribute": "agility", "dc": 10,
+            "success": {"gold": 30},
+        }
+        ev = event_from_dict(data)
+        assert ev.fail is None
+
+    def test_event_from_dict_pure_chance(self):
+        data = {
+            "id": "luck", "text": "Luck",
+            "attribute": None, "dc": 50,
+            "success": {"gold": 100},
+        }
+        ev = event_from_dict(data)
+        assert ev.attribute is None
+        assert ev.dc == 50
+        assert isinstance(ev.success, EventReward)
+
+    def test_event_from_dict_realistic(self):
+        data = {
+            "id": "forest_fallen_tree",
+            "text": "Путь преграждает упавшее дерево.",
+            "attribute": "strength", "dc": 10,
+            "success": {"gold": 30},
+            "fail": {"damage": 10},
+        }
+        ev = event_from_dict(data)
+        assert ev.id == "forest_fallen_tree"
+        assert isinstance(ev.success, EventReward)
+        assert ev.success.gold == 30
+        assert ev.fail.damage == 10
+
+    def test_event_from_dict_full_reward(self):
+        data = {
+            "id": "rich", "text": "Rich event",
+            "attribute": "intelligence", "dc": 15,
+            "success": {"gold": 100, "heal": 50, "buff_atk": 5, "buff_def": 3, "item_template": "Ring"},
+            "fail": {"damage": 20, "gold": 5},
+        }
+        ev = event_from_dict(data)
+        assert ev.success.gold == 100
+        assert ev.success.heal == 50
+        assert ev.success.buff_atk == 5
+        assert ev.success.buff_def == 3
+        assert ev.success.item_template == "Ring"
+        assert ev.fail.damage == 20
+        assert ev.fail.gold == 5
+
+
+class TestApplyEventReward:
+    def test_apply_gold(self, warrior):
+        warrior.gold = 50
+        parts = apply_event_reward(EventReward(gold=30), warrior)
+        assert warrior.gold == 80
+        assert any("30" in p and "💰" in p for p in parts)
+
+    def test_apply_heal(self, warrior):
+        warrior.hp = 10
+        parts = apply_event_reward(EventReward(heal=20), warrior)
+        assert warrior.hp == 30
+        assert any("❤️" in p for p in parts)
+
+    def test_apply_heal_caps_at_max(self, warrior):
+        warrior.hp = 1
+        parts = apply_event_reward(EventReward(heal=9999), warrior)
+        assert warrior.hp == warrior.max_hp
+
+    def test_apply_damage(self, warrior):
+        hp_before = warrior.hp
+        parts = apply_event_reward(EventReward(damage=15), warrior)
+        assert warrior.hp == hp_before - 15
+        assert any("❤️" in p for p in parts)
+
+    def test_apply_damage_clamp_to_zero(self, warrior):
+        parts = apply_event_reward(EventReward(damage=9999), warrior)
+        assert warrior.hp == 0
+
+    def test_apply_buff_atk(self, warrior):
+        buffs = {}
+        parts = apply_event_reward(EventReward(buff_atk=5), warrior, buffs)
+        assert buffs["atk"] == 5
+        assert any("⚔️" in p for p in parts)
+
+    def test_apply_buff_def(self, warrior):
+        buffs = {}
+        parts = apply_event_reward(EventReward(buff_def=3), warrior, buffs)
+        assert buffs["def"] == 3
+        assert any("🛡" in p for p in parts)
+
+    def test_apply_both_buffs(self, warrior):
+        buffs = {}
+        parts = apply_event_reward(EventReward(buff_atk=5, buff_def=3), warrior, buffs)
+        assert buffs["atk"] == 5
+        assert buffs["def"] == 3
+
+    def test_apply_buffs_accumulate(self, warrior):
+        buffs = {"atk": 2}
+        apply_event_reward(EventReward(buff_atk=3), warrior, buffs)
+        assert buffs["atk"] == 5
+
+    def test_apply_buffs_no_dict_skipped(self, warrior):
+        parts = apply_event_reward(EventReward(buff_atk=5), warrior)
+        assert all("⚔️" not in p for p in parts)
+
+    def test_apply_item_template_returns_marker(self, warrior):
+        parts = apply_event_reward(EventReward(item_template="Magic Ring"), warrior)
+        markers = [p for p in parts if p.startswith("item:")]
+        assert len(markers) == 1
+        assert markers[0] == "item:Magic Ring"
+
+    def test_apply_empty_reward(self, warrior):
+        parts = apply_event_reward(EventReward(), warrior)
+        assert parts == []
+
+    def test_apply_gold_damage_heal_together(self, warrior):
+        warrior.gold = 10
+        warrior.hp = 50
+        parts = apply_event_reward(EventReward(gold=40, heal=10, damage=20), warrior)
+        assert warrior.gold == 50
+        assert warrior.hp == 40
+        assert len([p for p in parts if "💰" in p or "❤️" in p]) >= 2
+
+    def test_apply_reward_pure_chance_success(self):
+        char = Character(owner_tg_id=1, name="Test", class_key="warrior")
+        char.gold = 0
+        ev = RaidEvent(id="luck", text="Luck", attribute=None, dc=100,
+                       success=EventReward(gold=50))
+        success, reward = resolve_event(ev, char)
+        assert success
+        parts = apply_event_reward(reward, char)
+        assert char.gold == 50
+
 
 class TestEvents:
     def test_event_strength_check_success(self, warrior):

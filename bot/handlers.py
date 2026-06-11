@@ -30,7 +30,7 @@ from core.raid import create_raid, generate_loot, distribute_exp_gold, RaidSessi
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
-from core.events import resolve_event, RaidEvent, EventReward
+from core.events import resolve_event, apply_event_reward, event_from_dict, RaidEvent, EventReward
 from core.items import Item as InventoryItem
 from utils.rng import roll_chance
 from data.storage import get_template
@@ -1058,8 +1058,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         available = [e for e in loc.events if e["id"] not in session.used_event_ids]
         if not available:
             available = loc.events
-        raw = _random.choice(available)
-        ev = RaidEvent(**raw)
+        ev = event_from_dict(_random.choice(available))
         session.used_event_ids.add(ev.id)
         success, reward = resolve_event(ev, char)
 
@@ -1069,19 +1068,15 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif ev.fail:
             lines.append("❌ **Провал!**")
 
-        parts = []
-        if reward.gold:
-            char.gold += reward.gold
-            parts.append(f"{reward.gold}💰")
-        if reward.heal:
-            old = char.hp
-            char.hp = min(char.max_hp, char.hp + reward.heal)
-            parts.append(f"+{char.hp - old}❤️")
-        if reward.damage:
-            char.hp = max(0, char.hp - reward.damage)
-            parts.append(f"-{reward.damage}❤️")
-        if reward.item_template:
-            tpl = get_template(reward.item_template)
+        parts = apply_event_reward(reward, char, session.active_buffs)
+        item_part = None
+        for p in parts:
+            if p.startswith("item:"):
+                item_part = p
+        if item_part:
+            parts.remove(item_part)
+            tpl_name = item_part.split(":", 1)[1]
+            tpl = get_template(tpl_name)
             if tpl:
                 new_item = InventoryItem(
                     template=tpl, uid=f"ev_{uuid.uuid4().hex[:8]}",
@@ -1089,15 +1084,6 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 char.inventory.append(new_item)
                 parts.append(f"🎒 {new_item.name}")
-        if reward.buff_atk or reward.buff_def:
-            session.active_buffs["atk"] = session.active_buffs.get("atk", 0) + reward.buff_atk
-            session.active_buffs["def"] = session.active_buffs.get("def", 0) + reward.buff_def
-            b = []
-            if reward.buff_atk:
-                b.append(f"+{reward.buff_atk}⚔️")
-            if reward.buff_def:
-                b.append(f"+{reward.buff_def}🛡")
-            parts.append(f" ({', '.join(b)} до конца рейда)")
         if parts:
             lines.append("  " + " | ".join(parts))
 
