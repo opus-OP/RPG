@@ -30,7 +30,7 @@ from core.raid import create_raid, generate_loot, distribute_exp_gold, RaidSessi
 from core.economy import MARKET
 from data.storage import storage
 from ai.narrative import call_narrative_api
-from core.events import resolve_event, apply_event_reward, event_from_dict, RaidEvent, EventReward
+from core.events import resolve_event_option, apply_event_reward, event_from_dict, RaidEvent, EventOption, EventReward
 from core.items import Item as InventoryItem
 from utils.rng import roll_chance
 from data.storage import get_template
@@ -802,10 +802,9 @@ async def _handle_player_turn(
         lines.append("\n💀 **Вы погибли от ран!**")
         char.count_raid += 1
         char.in_raid = False
+        char.hp = char.max_hp
         char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
         char.release_companion()
-        char.alive = True
-        char.hp = char.max_hp
         await _save_char(char)
         if len(session.participant_names) <= 1:
             session.status = RaidStatus.FAILED
@@ -815,6 +814,12 @@ async def _handle_player_turn(
             await update.message.reply_text("\n".join(lines))
             advance_turn_core(enc)
             await _advance_turn(context, session)
+        return
+
+    lines.append(f"🗡 _ваш ход закончен_")
+    await _save_char(char)
+    advance_turn_core(enc)
+    await _advance_turn(context, session)
         return
 
     if enemy.hp <= 0:
@@ -897,11 +902,8 @@ async def _resolve_auto_turn(
         died = target_char.hp <= 0
         if died:
             target_char.count_raid += 1
-            target_char.in_raid = False
             target_char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
             target_char.release_companion()
-            target_char.alive = True
-            target_char.hp = target_char.max_hp
         await _save_char(target_char)
 
         enemy_narrative = ""
@@ -1050,69 +1052,40 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Персонаж не найден.")
         return
     session.current_encounter += 1
-    event_fired = False
 
     loc = get_location(session.location_key)
-    event_text = ""
-    if loc and loc.events and roll_chance(0.30):
+    if loc and loc.events and not session.pending_event and roll_chance(0.30):
         available = [e for e in loc.events if e["id"] not in session.used_event_ids]
         if not available:
             available = loc.events
-        ev = event_from_dict(_random.choice(available))
+        ev_raw = _random.choice(available)
+        ev = event_from_dict(ev_raw)
         session.used_event_ids.add(ev.id)
-        success, reward = resolve_event(ev, char)
+        session.pending_event = ev_raw
+        session.current_encounter -= 1
+        await _save_session(context, session)
 
-        lines = [f"📜 {ev.text}"]
-        if success:
-            lines.append("✅ **Успех!**")
-        elif ev.fail:
-            lines.append("❌ **Провал!**")
-
-        parts = apply_event_reward(reward, char, session.active_buffs)
-        item_part = None
-        for p in parts:
-            if p.startswith("item:"):
-                item_part = p
-        if item_part:
-            parts.remove(item_part)
-            tpl_name = item_part.split(":", 1)[1]
-            tpl = get_template(tpl_name)
-            if tpl:
-                new_item = InventoryItem(
-                    template=tpl, uid=f"ev_{uuid.uuid4().hex[:8]}",
-                    durability=tpl.durability_max, durability_max=tpl.durability_max,
-                )
-                char.inventory.append(new_item)
-                parts.append(f"🎒 {new_item.name}")
-        if parts:
-            lines.append("  " + " | ".join(parts))
-
-        event_text = "\n".join(lines)
-        event_fired = True
-        await _save_char(char)
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(o.text, callback_data=f"raid_ev_opt_{i}")]
+            for i, o in enumerate(ev.options)
+        ])
+        await query.edit_message_text(f"📜 {ev.text}", reply_markup=kb)
+        return
 
     if char.hp <= 0:
-        if event_fired:
-            session.current_encounter -= 1
         await _save_session(context, session)
         char.count_raid += 1
         session.status = RaidStatus.FAILED
         char.in_raid = False
+        char.hp = char.max_hp
         char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
         char.release_companion()
-        char.alive = True
-        char.hp = char.max_hp
         await _save_char(char)
         _cleanup_raid(context)
-        text = "💀 **Вы погибли от ран!**"
-        if event_text:
-            text = f"{event_text}\n\n{text}"
-        await query.edit_message_text(text, reply_markup=raid_failed())
+        await query.edit_message_text("💀 **Вы погибли от ран!**", reply_markup=raid_failed())
         return
 
     if session.current_encounter >= len(session.encounters):
-        if event_fired:
-            session.current_encounter -= 1
         await _save_session(context, session)
         if loc:
             session.status = RaidStatus.COMPLETED
@@ -1121,8 +1094,6 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for rname, rtext in rewards:
                 loot_lines.append(f"• {rname}: {rtext}")
             text = "\n".join(loot_lines)
-            if event_text:
-                text = f"{event_text}\n\n{text}"
             await _notify_participants(context, session, text, raid_done())
             _cleanup_raid(context)
             await query.edit_message_text(text, reply_markup=raid_done())
@@ -1130,13 +1101,7 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Ошибка: локация не найдена.", reply_markup=main_menu())
         return
 
-    if event_fired:
-        session.current_encounter -= 1
     await _save_session(context, session)
-
-    if event_text:
-        await query.edit_message_text(event_text, reply_markup=raid_next())
-        return
 
     # Build initiative order for the new encounter
     chars = await _get_participant_chars(context, session)
@@ -1156,6 +1121,71 @@ async def cb_raid_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Бросаем инициативу…"
     )
     await _advance_turn(context, session)
+
+@_auth_cb
+async def cb_raid_event_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+    session = await _get_session(context)
+    if not session or not session.pending_event:
+        await query.edit_message_text("Событие уже обработано.")
+        return
+    char = await _get_char(uid, context)
+    if not char:
+        await query.edit_message_text("Персонаж не найден.")
+        return
+
+    opt_index = int(query.data.split("_")[-1])
+    ev = event_from_dict(session.pending_event)
+    option = ev.options[opt_index]
+
+    success, reward = resolve_event_option(option, char)
+
+    lines = [f"📜 {ev.text}"]
+    if success:
+        lines.append("✅ **Успех!**")
+    elif option.fail:
+        lines.append("❌ **Провал!**")
+
+    parts = apply_event_reward(reward, char, session.active_buffs)
+    item_part = None
+    for p in parts:
+        if p.startswith("item:"):
+            item_part = p
+    if item_part:
+        parts.remove(item_part)
+        tpl_name = item_part.split(":", 1)[1]
+        tpl = get_template(tpl_name)
+        if tpl:
+            new_item = InventoryItem(
+                template=tpl, uid=f"ev_{uuid.uuid4().hex[:8]}",
+                durability=tpl.durability_max, durability_max=tpl.durability_max,
+            )
+            char.inventory.append(new_item)
+            parts.append(f"🎒 {new_item.name}")
+    if parts:
+        lines.append("  " + " | ".join(parts))
+
+    session.pending_event = None
+    await _save_char(char)
+    await _save_session(context, session)
+
+    if char.hp <= 0:
+        char.count_raid += 1
+        session.status = RaidStatus.FAILED
+        char.in_raid = False
+        char.hp = char.max_hp
+        char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
+        char.release_companion()
+        await _save_char(char)
+        _cleanup_raid(context)
+        text = "\n\n".join(["\n".join(lines), "💀 **Вы погибли от ран!**"])
+        await query.edit_message_text(text, reply_markup=raid_failed())
+        return
+
+    await query.edit_message_text("\n".join(lines), reply_markup=raid_next())
+
 
 # ═══════════════════════════════════════════════════════════════
 # /forfeit — сдаться в рейде
@@ -2005,6 +2035,7 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(cb_raid_action, pattern=r"^raid_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_cancel_action, pattern=r"^raid_cancel_action$"))
     app.add_handler(CallbackQueryHandler(cb_raid_next, pattern=r"^raid_next$"))
+    app.add_handler(CallbackQueryHandler(cb_raid_event_choice, pattern=r"^raid_ev_opt_\d+$"))
     app.add_handler(CallbackQueryHandler(cb_raid_leave, pattern=r"^raid_leave$"))
 
     app.add_handler(CallbackQueryHandler(cb_stat_alloc, pattern=r"^stat_(str|agi|int)$"))

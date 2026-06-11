@@ -95,6 +95,7 @@ class RaidSession:
     active_buffs: dict[str, int] = field(default_factory=dict)
     used_event_ids: set[str] = field(default_factory=set)
     turn_pending_uid: Optional[int] = None
+    pending_event: Optional[dict] = None
 
 
 # ─── Сериализация для хранения в БД ─────────────────────────
@@ -156,6 +157,7 @@ def session_to_dict(session: RaidSession) -> dict:
         "active_buffs": session.active_buffs,
         "used_event_ids": list(session.used_event_ids),
         "turn_pending_uid": session.turn_pending_uid,
+        "pending_event": session.pending_event,
         "encounters": [raid_encounter_to_dict(e) for e in session.encounters],
     }
 
@@ -173,6 +175,7 @@ def session_from_dict(data: dict) -> RaidSession:
         active_buffs=data.get("active_buffs", {}),
         used_event_ids=set(data.get("used_event_ids", [])),
         turn_pending_uid=data.get("turn_pending_uid"),
+        pending_event=data.get("pending_event"),
         encounters=[raid_encounter_from_dict(e) for e in data.get("encounters", [])],
     )
 

@@ -22,11 +22,50 @@
         }
       },
       "events": [
-        {"id": "forest_fallen_tree", "text": "Путь преграждает упавшее дерево. Можно попробовать разобрать завал.", "attribute": "strength", "dc": 10, "success": {"gold": 30}, "fail": {"damage": 10}},
-        {"id": "forest_hidden_cache", "text": "Вы замечаете что-то блестящее в кустах.", "attribute": "intelligence", "dc": 12, "success": {"gold": 40, "item_template": "Кольцо выносливости"}, "fail": {"damage": 10}},
-        {"id": "forest_wolf_pack", "text": "Стая волков рыщет неподалёку. Нужно быстро забраться на дерево.", "attribute": "agility", "dc": 10, "success": {}, "fail": {"damage": 15}},
-        {"id": "forest_healing_spring", "text": "Вы находите родник с чистой водой.", "attribute": null, "dc": 50, "success": {"heal": 25}, "fail": {}},
-        {"id": "forest_herb_garden", "text": "Поляна с редкими травами. Знание трав поможет собрать ценное.", "attribute": "intelligence", "dc": 11, "success": {"heal": 30, "gold": 15}, "fail": {}}
+        {
+          "id": "forest_fallen_tree",
+          "text": "Путь преграждает упавшее дерево.",
+          "options": [
+            {"text": "Разобрать завал силой", "attribute": "strength", "dc": 10, "success": {"gold": 30}, "fail": {"damage": 10}},
+            {"text": "Найти обходной путь", "attribute": "agility", "dc": 12, "success": {"gold": 20}, "fail": {"damage": 5}},
+            {"text": "Оценить, не рухнут ли ещё", "attribute": "intelligence", "dc": 14, "success": {"gold": 40, "heal": 10}, "fail": {}}
+          ]
+        },
+        {
+          "id": "forest_hidden_cache",
+          "text": "Вы замечаете что-то блестящее в кустах.",
+          "options": [
+            {"text": "Осторожно осмотреть", "attribute": "intelligence", "dc": 12, "success": {"gold": 40, "item_template": "Кольцо выносливости"}, "fail": {"damage": 10}},
+            {"text": "Быстро схватить и бежать", "attribute": "agility", "dc": 14, "success": {"gold": 25}, "fail": {"damage": 15}},
+            {"text": "Пробиться через ветки силой", "attribute": "strength", "dc": 16, "success": {"gold": 50}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "forest_wolf_pack",
+          "text": "Стая волков рыщет неподалёку.",
+          "options": [
+            {"text": "Забраться на дерево", "attribute": "agility", "dc": 10, "success": {}, "fail": {"damage": 15}},
+            {"text": "Прогнать стаю рыком", "attribute": "strength", "dc": 12, "success": {"gold": 15}, "fail": {"damage": 20}},
+            {"text": "Обмануть хитростью", "attribute": "intelligence", "dc": 14, "success": {"gold": 25}, "fail": {"damage": 10}}
+          ]
+        },
+        {
+          "id": "forest_healing_spring",
+          "text": "Вы находите родник с чистой водой.",
+          "options": [
+            {"text": "Напиться и отдохнуть", "attribute": null, "dc": 50, "success": {"heal": 25}, "fail": {}},
+            {"text": "Набрать воды с собой", "attribute": "intelligence", "dc": 12, "success": {"heal": 35, "gold": 10}, "fail": {"damage": 5}}
+          ]
+        },
+        {
+          "id": "forest_herb_garden",
+          "text": "Поляна с редкими травами.",
+          "options": [
+            {"text": "Собрать известные травы", "attribute": "intelligence", "dc": 11, "success": {"heal": 30, "gold": 15}, "fail": {}},
+            {"text": "Поискать редкие растения", "attribute": "intelligence", "dc": 15, "success": {"heal": 50, "gold": 25}, "fail": {"damage": 10}},
+            {"text": "Защитить поляну от зверей", "attribute": "strength", "dc": 13, "success": {"gold": 20}, "fail": {"damage": 10}}
+          ]
+        }
       ]
     },
     "caves": {
@@ -50,11 +89,50 @@
         }
       },
       "events": [
-        {"id": "caves_collapse", "text": "Туннель обвалился — нужно разобрать завал.", "attribute": "strength", "dc": 12, "success": {"gold": 50}, "fail": {"damage": 20}},
-        {"id": "caves_crystal_vein", "text": "Вы видите жилу редких кристаллов.", "attribute": "intelligence", "dc": 13, "success": {"gold": 70, "item_template": "Каменная броня"}, "fail": {"damage": 15}},
-        {"id": "caves_deep_chasm", "text": "Перед вами глубокая расщелина. Нужно перепрыгнуть.", "attribute": "agility", "dc": 12, "success": {"gold": 40}, "fail": {"damage": 25}},
-        {"id": "caves_glowing_shrooms", "text": "Пещера светится странными грибами.", "attribute": null, "dc": 40, "success": {"heal": 35}, "fail": {}},
-        {"id": "caves_miner_cache", "text": "Старый тайник шахтёров.", "attribute": "intelligence", "dc": 14, "success": {"gold": 60, "buff_def": 3}, "fail": {"damage": 10}}
+        {
+          "id": "caves_collapse",
+          "text": "Туннель обвалился — нужно пробираться дальше.",
+          "options": [
+            {"text": "Разобрать завал", "attribute": "strength", "dc": 12, "success": {"gold": 50}, "fail": {"damage": 20}},
+            {"text": "Найти щель и протиснуться", "attribute": "agility", "dc": 14, "success": {"gold": 30}, "fail": {"damage": 15}},
+            {"text": "Понять, куда вёл туннель", "attribute": "intelligence", "dc": 16, "success": {"gold": 70, "heal": 15}, "fail": {"damage": 10}}
+          ]
+        },
+        {
+          "id": "caves_crystal_vein",
+          "text": "Вы видите жилу редких кристаллов.",
+          "options": [
+            {"text": "Добыть кристаллы", "attribute": "strength", "dc": 13, "success": {"gold": 70, "item_template": "Каменная броня"}, "fail": {"damage": 15}},
+            {"text": "Аккуратно извлечь", "attribute": "intelligence", "dc": 15, "success": {"gold": 90, "heal": 10}, "fail": {"damage": 20}},
+            {"text": "Быстро набрать и уйти", "attribute": "agility", "dc": 14, "success": {"gold": 50}, "fail": {"damage": 25}}
+          ]
+        },
+        {
+          "id": "caves_deep_chasm",
+          "text": "Перед вами глубокая расщелина.",
+          "options": [
+            {"text": "Перепрыгнуть", "attribute": "agility", "dc": 12, "success": {"gold": 40}, "fail": {"damage": 25}},
+            {"text": "Перекинуть мост из камней", "attribute": "strength", "dc": 14, "success": {"gold": 60}, "fail": {"damage": 20}},
+            {"text": "Найти обход", "attribute": "intelligence", "dc": 13, "success": {"gold": 30, "heal": 10}, "fail": {"damage": 10}}
+          ]
+        },
+        {
+          "id": "caves_glowing_shrooms",
+          "text": "Пещера светится странными грибами.",
+          "options": [
+            {"text": "Собрать грибы", "attribute": null, "dc": 40, "success": {"heal": 35}, "fail": {}},
+            {"text": "Изучить грибы", "attribute": "intelligence", "dc": 13, "success": {"heal": 50, "gold": 20}, "fail": {"damage": 10}}
+          ]
+        },
+        {
+          "id": "caves_miner_cache",
+          "text": "Старый тайник шахтёров.",
+          "options": [
+            {"text": "Вскрыть тайник силой", "attribute": "strength", "dc": 14, "success": {"gold": 60, "buff_def": 3}, "fail": {"damage": 15}},
+            {"text": "Взломать замок", "attribute": "agility", "dc": 12, "success": {"gold": 50, "buff_atk": 2}, "fail": {"damage": 10}},
+            {"text": "Расшифровать записи", "attribute": "intelligence", "dc": 15, "success": {"gold": 80, "buff_atk": 3, "buff_def": 2}, "fail": {"damage": 10}}
+          ]
+        }
       ]
     },
     "dungeon": {
@@ -78,11 +156,51 @@
         }
       },
       "events": [
-        {"id": "dungeon_trap_floor", "text": "Плита под ногой уходит вниз! Нужно удержать равновесие.", "attribute": "agility", "dc": 14, "success": {"gold": 30}, "fail": {"damage": 30}},
-        {"id": "dungeon_armory", "text": "Комната с древним оружием на стенах.", "attribute": "intelligence", "dc": 15, "success": {"gold": 50, "item_template": "Проклятый клинок"}, "fail": {"damage": 20}},
-        {"id": "dungeon_soul_drain", "text": "Тёмная аура высасывает жизненные силы.", "attribute": null, "dc": 35, "success": {"buff_atk": 4, "gold": 30}, "fail": {"damage": 25}},
-        {"id": "dungeon_crumbling_statue", "text": "Статуя оживает и нападает! Держите оборону!", "attribute": "strength", "dc": 15, "success": {"gold": 70}, "fail": {"damage": 35}},
-        {"id": "dungeon_hidden_library", "text": "Тайная библиотека с магическими свитками.", "attribute": "intelligence", "dc": 16, "success": {"heal": 50, "gold": 40}, "fail": {"damage": 15}}
+        {
+          "id": "dungeon_trap_floor",
+          "text": "Плита под ногой уходит вниз!",
+          "options": [
+            {"text": "Удержать равновесие", "attribute": "agility", "dc": 14, "success": {"gold": 30}, "fail": {"damage": 30}},
+            {"text": "Упереться плечом", "attribute": "strength", "dc": 16, "success": {"gold": 50}, "fail": {"damage": 25}},
+            {"text": "Просчитать механизм ловушки", "attribute": "intelligence", "dc": 15, "success": {"gold": 60, "heal": 15}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "dungeon_armory",
+          "text": "Комната с древним оружием на стенах.",
+          "options": [
+            {"text": "Снять оружие со стены", "attribute": "agility", "dc": 15, "success": {"gold": 50, "item_template": "Проклятый клинок"}, "fail": {"damage": 20}},
+            {"text": "Пробить витрину", "attribute": "strength", "dc": 14, "success": {"gold": 40, "buff_atk": 3}, "fail": {"damage": 25}},
+            {"text": "Изучить древние символы", "attribute": "intelligence", "dc": 16, "success": {"gold": 70, "buff_atk": 5}, "fail": {"damage": 15}}
+          ]
+        },
+        {
+          "id": "dungeon_soul_drain",
+          "text": "Тёмная аура высасывает жизненные силы.",
+          "options": [
+            {"text": "Сопротивляться волей", "attribute": "intelligence", "dc": 13, "success": {"buff_atk": 4, "gold": 30}, "fail": {"damage": 25}},
+            {"text": "Прорваться бегом", "attribute": "agility", "dc": 15, "success": {"gold": 40}, "fail": {"damage": 35}},
+            {"text": "Погасить источник силой", "attribute": "strength", "dc": 16, "success": {"buff_def": 4, "gold": 50}, "fail": {"damage": 30}}
+          ]
+        },
+        {
+          "id": "dungeon_crumbling_statue",
+          "text": "Статуя оживает и нападает!",
+          "options": [
+            {"text": "Принять бой", "attribute": "strength", "dc": 15, "success": {"gold": 70}, "fail": {"damage": 35}},
+            {"text": "Уклониться и контратаковать", "attribute": "agility", "dc": 14, "success": {"gold": 60, "buff_atk": 2}, "fail": {"damage": 30}},
+            {"text": "Понять, что её активирует", "attribute": "intelligence", "dc": 16, "success": {"gold": 90, "heal": 20}, "fail": {"damage": 25}}
+          ]
+        },
+        {
+          "id": "dungeon_hidden_library",
+          "text": "Тайная библиотека с магическими свитками.",
+          "options": [
+            {"text": "Прочесть свитки", "attribute": "intelligence", "dc": 16, "success": {"heal": 50, "gold": 40}, "fail": {"damage": 15}},
+            {"text": "Собрать всё в сумку", "attribute": "agility", "dc": 13, "success": {"gold": 60}, "fail": {"damage": 20}},
+            {"text": "Защитить библиотеку от обвала", "attribute": "strength", "dc": 15, "success": {"gold": 50, "buff_def": 3}, "fail": {"damage": 25}}
+          ]
+        }
       ]
     },
     "volcano": {
@@ -106,11 +224,50 @@
         }
       },
       "events": [
-        {"id": "volcano_lava_river", "text": "Поток лавы преграждает путь. Нужно перепрыгнуть.", "attribute": "agility", "dc": 16, "success": {"gold": 80}, "fail": {"damage": 40}},
-        {"id": "volcano_ember_chest", "text": "Сундук, охваченный пламенем. Сбить огонь и открыть!", "attribute": "strength", "dc": 15, "success": {"gold": 100, "item_template": "Амулет тролля"}, "fail": {"damage": 30}},
-        {"id": "volcano_fire_spirits", "text": "Огненные духи кружат вокруг. Нужно найти тропу.", "attribute": "intelligence", "dc": 17, "success": {"buff_atk": 6, "gold": 60}, "fail": {"damage": 35}},
-        {"id": "volcano_cooling_vent", "text": "Расщелина с прохладным воздухом из глубин.", "attribute": null, "dc": 40, "success": {"heal": 50}, "fail": {}},
-        {"id": "volcano_dragon_cache", "text": "Сокровищница дракона! Но вход охраняет магическая печать.", "attribute": "intelligence", "dc": 18, "success": {"gold": 150, "item_template": "Корона смерти"}, "fail": {"damage": 40}}
+        {
+          "id": "volcano_lava_river",
+          "text": "Поток лавы преграждает путь.",
+          "options": [
+            {"text": "Перепрыгнуть через лаву", "attribute": "agility", "dc": 16, "success": {"gold": 80}, "fail": {"damage": 40}},
+            {"text": "Перекинуть каменный мост", "attribute": "strength", "dc": 17, "success": {"gold": 100, "heal": 15}, "fail": {"damage": 35}},
+            {"text": "Найти безопасную тропу", "attribute": "intelligence", "dc": 15, "success": {"gold": 70, "buff_def": 3}, "fail": {"damage": 25}}
+          ]
+        },
+        {
+          "id": "volcano_ember_chest",
+          "text": "Сундук, охваченный пламенем.",
+          "options": [
+            {"text": "Сбить огонь и открыть", "attribute": "strength", "dc": 15, "success": {"gold": 100, "item_template": "Амулет тролля"}, "fail": {"damage": 30}},
+            {"text": "Обхитрить пламя", "attribute": "agility", "dc": 17, "success": {"gold": 80, "buff_atk": 3}, "fail": {"damage": 35}},
+            {"text": "Погасить магией", "attribute": "intelligence", "dc": 16, "success": {"gold": 120, "heal": 20}, "fail": {"damage": 25}}
+          ]
+        },
+        {
+          "id": "volcano_fire_spirits",
+          "text": "Огненные духи кружат вокруг.",
+          "options": [
+            {"text": "Найти тропу сквозь духов", "attribute": "intelligence", "dc": 17, "success": {"buff_atk": 6, "gold": 60}, "fail": {"damage": 35}},
+            {"text": "Прорваться сквозь строй", "attribute": "strength", "dc": 16, "success": {"gold": 80, "buff_def": 3}, "fail": {"damage": 40}},
+            {"text": "Проскользнуть незаметно", "attribute": "agility", "dc": 15, "success": {"gold": 50, "heal": 15}, "fail": {"damage": 30}}
+          ]
+        },
+        {
+          "id": "volcano_cooling_vent",
+          "text": "Расщелина с прохладным воздухом из глубин.",
+          "options": [
+            {"text": "Отдохнуть у расщелины", "attribute": null, "dc": 40, "success": {"heal": 50}, "fail": {}},
+            {"text": "Исследовать глубину", "attribute": "intelligence", "dc": 16, "success": {"heal": 70, "gold": 30}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "volcano_dragon_cache",
+          "text": "Сокровищница дракона! Но вход охраняет магическая печать.",
+          "options": [
+            {"text": "Расшифровать печать", "attribute": "intelligence", "dc": 18, "success": {"gold": 150, "item_template": "Корона смерти"}, "fail": {"damage": 40}},
+            {"text": "Сорвать печать силой", "attribute": "strength", "dc": 17, "success": {"gold": 100, "buff_atk": 5}, "fail": {"damage": 45}},
+            {"text": "Найти лазейку", "attribute": "agility", "dc": 19, "success": {"gold": 130, "buff_def": 5}, "fail": {"damage": 35}}
+          ]
+        }
       ]
     },
     "frost_tomb": {
@@ -134,11 +291,50 @@
         }
       },
       "events": [
-        {"id": "frost_tomb_ice_bridge", "text": "Ледяной мост через пропасть. Нужно пройти, не поскользнувшись.", "attribute": "agility", "dc": 15, "success": {"gold": 60}, "fail": {"damage": 30}},
-        {"id": "frost_tomb_frozen_chest", "text": "Сундук во льду. Разбить лёд силой!", "attribute": "strength", "dc": 14, "success": {"gold": 80, "item_template": "Плащ теней"}, "fail": {"damage": 20}},
-        {"id": "frost_tomb_rune_door", "text": "Дверь с древними рунами. Нужно расшифровать.", "attribute": "intelligence", "dc": 16, "success": {"gold": 70, "buff_def": 4}, "fail": {"damage": 25}},
-        {"id": "frost_tomb_frozen_fountain", "text": "Замёрзший фонтан. Подо льдом чистая вода.", "attribute": null, "dc": 45, "success": {"heal": 40}, "fail": {}},
-        {"id": "frost_tomb_cursed_coffin", "text": "Гроб с чёрной меткой. Открыть или нет?", "attribute": "intelligence", "dc": 15, "success": {"gold": 90, "buff_atk": 5}, "fail": {"damage": 35}}
+        {
+          "id": "frost_tomb_ice_bridge",
+          "text": "Ледяной мост через пропасть.",
+          "options": [
+            {"text": "Пройти, не поскользнувшись", "attribute": "agility", "dc": 15, "success": {"gold": 60}, "fail": {"damage": 30}},
+            {"text": "Укрепить мост силой", "attribute": "strength", "dc": 16, "success": {"gold": 80, "heal": 10}, "fail": {"damage": 25}},
+            {"text": "Понять структуру льда", "attribute": "intelligence", "dc": 14, "success": {"gold": 50, "buff_def": 2}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "frost_tomb_frozen_chest",
+          "text": "Сундук во льду.",
+          "options": [
+            {"text": "Разбить лёд силой", "attribute": "strength", "dc": 14, "success": {"gold": 80, "item_template": "Плащ теней"}, "fail": {"damage": 20}},
+            {"text": "Растопить лёд магией", "attribute": "intelligence", "dc": 16, "success": {"gold": 100, "heal": 15}, "fail": {"damage": 15}},
+            {"text": "Найти хрупкое место", "attribute": "agility", "dc": 15, "success": {"gold": 70, "buff_atk": 2}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "frost_tomb_rune_door",
+          "text": "Дверь с древними рунами.",
+          "options": [
+            {"text": "Расшифровать руны", "attribute": "intelligence", "dc": 16, "success": {"gold": 70, "buff_def": 4}, "fail": {"damage": 25}},
+            {"text": "Выбить дверь плечом", "attribute": "strength", "dc": 17, "success": {"gold": 60, "buff_atk": 3}, "fail": {"damage": 30}},
+            {"text": "Найти скрытый механизм", "attribute": "agility", "dc": 15, "success": {"gold": 50, "heal": 15}, "fail": {"damage": 20}}
+          ]
+        },
+        {
+          "id": "frost_tomb_frozen_fountain",
+          "text": "Замёрзший фонтан. Подо льдом чистая вода.",
+          "options": [
+            {"text": "Набрать талой воды", "attribute": null, "dc": 45, "success": {"heal": 40}, "fail": {}},
+            {"text": "Исследовать дно фонтана", "attribute": "intelligence", "dc": 14, "success": {"heal": 60, "gold": 25}, "fail": {"damage": 15}}
+          ]
+        },
+        {
+          "id": "frost_tomb_cursed_coffin",
+          "text": "Гроб с чёрной меткой. Открыть или нет?",
+          "options": [
+            {"text": "Открыть, готовясь к бою", "attribute": "strength", "dc": 15, "success": {"gold": 90, "buff_atk": 5}, "fail": {"damage": 35}},
+            {"text": "Обойти ловушки гроба", "attribute": "agility", "dc": 16, "success": {"gold": 70, "buff_def": 3}, "fail": {"damage": 30}},
+            {"text": "Рассеять проклятие", "attribute": "intelligence", "dc": 17, "success": {"gold": 110, "heal": 25}, "fail": {"damage": 25}}
+          ]
+        }
       ]
     }
   }

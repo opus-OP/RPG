@@ -17,8 +17,7 @@ class EventReward:
 
 
 @dataclass
-class RaidEvent:
-    id: str
+class EventOption:
     text: str
     attribute: Optional[str]
     dc: int
@@ -26,25 +25,38 @@ class RaidEvent:
     fail: Optional[EventReward] = None
 
 
+@dataclass
+class RaidEvent:
+    id: str
+    text: str
+    options: list[EventOption]
+
+
 def event_from_dict(data: dict) -> RaidEvent:
     ev_data = dict(data)
-    ev_data["success"] = EventReward(**ev_data["success"])
-    if ev_data.get("fail"):
-        ev_data["fail"] = EventReward(**ev_data["fail"])
+    ev_data["options"] = [
+        EventOption(
+            text=o["text"],
+            attribute=o.get("attribute"),
+            dc=o["dc"],
+            success=EventReward(**o["success"]),
+            fail=EventReward(**o["fail"]) if o.get("fail") else None,
+        )
+        for o in ev_data["options"]
+    ]
     return RaidEvent(**ev_data)
 
 
-def resolve_event(event: RaidEvent, char: Character) -> tuple[bool, EventReward]:
-    success: bool
-    if event.attribute:
-        stat_val = getattr(char.stats, event.attribute, 5)
+def resolve_event_option(option: EventOption, char: Character) -> tuple[bool, EventReward]:
+    if option.attribute:
+        stat_val = getattr(char.stats, option.attribute, 5)
         roll = secure_randint(1, 20)
         total = stat_val + roll
-        success = total >= event.dc
+        success = total >= option.dc
     else:
-        success = roll_chance(event.dc / 100.0)
+        success = roll_chance(option.dc / 100.0)
 
-    reward = event.success if success else event.fail
+    reward = option.success if success else option.fail
     if reward is None:
         reward = EventReward()
     return success, reward

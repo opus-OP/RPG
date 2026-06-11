@@ -3,7 +3,7 @@ import sys; sys.path.insert(0, ".")
 import pytest
 from core.combat import calc_damage, resolve_turn, AttackResult, StatusEffect, apply_nn_modifiers, BattleState
 from core.raid import resolve_player_turn, resolve_enemy_turn, resolve_companion_turn, build_initiative_order, get_current_turn, advance_turn_core, create_enemy, pick_enemy_target
-from core.events import resolve_event, apply_event_reward, event_from_dict, RaidEvent, EventReward
+from core.events import resolve_event_option, apply_event_reward, event_from_dict, RaidEvent, EventOption, EventReward
 from core.items import ItemEffect, ItemTemplate, ItemType, Rarity, Item
 from core.weapon_gen import roll_weapon_from_pattern, find_patterns
 from core.character import Character, Companion
@@ -360,70 +360,85 @@ class TestEventsFromDict:
     def test_event_from_dict_full(self):
         data = {
             "id": "test_ev", "text": "Test event",
-            "attribute": "strength", "dc": 12,
-            "success": {"gold": 50, "heal": 20},
-            "fail": {"damage": 10},
+            "options": [
+                {"text": "Push", "attribute": "strength", "dc": 12,
+                 "success": {"gold": 50, "heal": 20},
+                 "fail": {"damage": 10}},
+            ],
         }
         ev = event_from_dict(data)
         assert ev.id == "test_ev"
         assert ev.text == "Test event"
-        assert ev.attribute == "strength"
-        assert ev.dc == 12
-        assert isinstance(ev.success, EventReward)
-        assert ev.success.gold == 50
-        assert ev.success.heal == 20
-        assert isinstance(ev.fail, EventReward)
-        assert ev.fail.damage == 10
+        assert len(ev.options) == 1
+        opt = ev.options[0]
+        assert opt.attribute == "strength"
+        assert opt.dc == 12
+        assert isinstance(opt.success, EventReward)
+        assert opt.success.gold == 50
+        assert opt.success.heal == 20
+        assert isinstance(opt.fail, EventReward)
+        assert opt.fail.damage == 10
 
     def test_event_from_dict_no_fail(self):
         data = {
             "id": "test_ev", "text": "Test",
-            "attribute": "agility", "dc": 10,
-            "success": {"gold": 30},
+            "options": [
+                {"text": "Sneak", "attribute": "agility", "dc": 10,
+                 "success": {"gold": 30}},
+            ],
         }
         ev = event_from_dict(data)
-        assert ev.fail is None
+        assert ev.options[0].fail is None
 
     def test_event_from_dict_pure_chance(self):
         data = {
             "id": "luck", "text": "Luck",
-            "attribute": None, "dc": 50,
-            "success": {"gold": 100},
+            "options": [
+                {"text": "Try", "attribute": None, "dc": 50,
+                 "success": {"gold": 100}},
+            ],
         }
         ev = event_from_dict(data)
-        assert ev.attribute is None
-        assert ev.dc == 50
-        assert isinstance(ev.success, EventReward)
+        opt = ev.options[0]
+        assert opt.attribute is None
+        assert opt.dc == 50
+        assert isinstance(opt.success, EventReward)
 
     def test_event_from_dict_realistic(self):
         data = {
             "id": "forest_fallen_tree",
             "text": "Путь преграждает упавшее дерево.",
-            "attribute": "strength", "dc": 10,
-            "success": {"gold": 30},
-            "fail": {"damage": 10},
+            "options": [
+                {"text": "Push", "attribute": "strength", "dc": 10,
+                 "success": {"gold": 30},
+                 "fail": {"damage": 10}},
+            ],
         }
         ev = event_from_dict(data)
         assert ev.id == "forest_fallen_tree"
-        assert isinstance(ev.success, EventReward)
-        assert ev.success.gold == 30
-        assert ev.fail.damage == 10
+        opt = ev.options[0]
+        assert isinstance(opt.success, EventReward)
+        assert opt.success.gold == 30
+        assert opt.fail.damage == 10
 
     def test_event_from_dict_full_reward(self):
         data = {
             "id": "rich", "text": "Rich event",
-            "attribute": "intelligence", "dc": 15,
-            "success": {"gold": 100, "heal": 50, "buff_atk": 5, "buff_def": 3, "item_template": "Ring"},
-            "fail": {"damage": 20, "gold": 5},
+            "options": [
+                {"text": "Study", "attribute": "intelligence", "dc": 15,
+                 "success": {"gold": 100, "heal": 50, "buff_atk": 5, "buff_def": 3, "item_template": "Ring"},
+                 "fail": {"damage": 20, "gold": 5}},
+            ],
         }
         ev = event_from_dict(data)
-        assert ev.success.gold == 100
-        assert ev.success.heal == 50
-        assert ev.success.buff_atk == 5
-        assert ev.success.buff_def == 3
-        assert ev.success.item_template == "Ring"
-        assert ev.fail.damage == 20
-        assert ev.fail.gold == 5
+        opt = ev.options[0]
+        assert opt.success.gold == 100
+        assert opt.success.heal == 50
+        assert opt.success.buff_atk == 5
+        assert opt.success.buff_def == 3
+        assert opt.success.item_template == "Ring"
+        assert opt.fail.damage == 20
+        assert opt.fail.gold == 5
 
 
 class TestApplyEventReward:
@@ -502,9 +517,11 @@ class TestApplyEventReward:
     def test_apply_reward_pure_chance_success(self):
         char = Character(owner_tg_id=1, name="Test", class_key="warrior")
         char.gold = 0
-        ev = RaidEvent(id="luck", text="Luck", attribute=None, dc=100,
-                       success=EventReward(gold=50))
-        success, reward = resolve_event(ev, char)
+        ev = RaidEvent(id="luck", text="Luck", options=[
+            EventOption(text="Test", attribute=None, dc=100,
+                        success=EventReward(gold=50)),
+        ])
+        success, reward = resolve_event_option(ev.options[0], char)
         assert success
         parts = apply_event_reward(reward, char)
         assert char.gold == 50
@@ -513,58 +530,73 @@ class TestApplyEventReward:
 class TestEvents:
     def test_event_strength_check_success(self, warrior):
         warrior.base_stats.strength = 20
-        event = RaidEvent(id="test", text="Test", attribute="strength", dc=15,
-                          success=EventReward(gold=50))
-        success, reward = resolve_event(event, warrior)
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Push", attribute="strength", dc=15,
+                        success=EventReward(gold=50)),
+        ])
+        success, reward = resolve_event_option(event.options[0], warrior)
         assert success
         assert reward.gold == 50
 
     def test_event_strength_check_fail(self, warrior):
         warrior.base_stats.strength = 1
-        event = RaidEvent(id="test", text="Test", attribute="strength", dc=20,
-                          success=EventReward(gold=50),
-                          fail=EventReward(damage=10))
-        success, reward = resolve_event(event, warrior)
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Push", attribute="strength", dc=999,
+                        success=EventReward(gold=50),
+                        fail=EventReward(damage=10)),
+        ])
+        success, reward = resolve_event_option(event.options[0], warrior)
         assert not success
         assert reward.damage == 10
 
     def test_event_agility_check(self, warrior):
         warrior.base_stats.agility = 8
-        event = RaidEvent(id="test", text="Test", attribute="agility", dc=12,
-                          success=EventReward(heal=20))
-        success, reward = resolve_event(event, warrior)
-        # With AGI=8 + d20 avg 10.5, likely success
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Dodge", attribute="agility", dc=12,
+                        success=EventReward(heal=20)),
+        ])
+        success, reward = resolve_event_option(event.options[0], warrior)
         if success:
             assert reward.heal == 20
 
     def test_event_intelligence_check(self, warrior):
         warrior.base_stats.intelligence = 8
-        event = RaidEvent(id="test", text="Test", attribute="intelligence", dc=13,
-                          success=EventReward(buff_atk=5))
-        success, reward = resolve_event(event, warrior)
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Study", attribute="intelligence", dc=13,
+                        success=EventReward(buff_atk=5)),
+        ])
+        success, reward = resolve_event_option(event.options[0], warrior)
         if success:
             assert reward.buff_atk == 5
 
     def test_event_pure_chance(self):
-        event = RaidEvent(id="test", text="Test", attribute=None, dc=100,  # 100% success
-                          success=EventReward(gold=100))
-        success, reward = resolve_event(event, Character(owner_tg_id=1, name="Test", class_key="warrior"))
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Try", attribute=None, dc=100,
+                        success=EventReward(gold=100)),
+        ])
+        success, reward = resolve_event_option(event.options[0],
+            Character(owner_tg_id=1, name="Test", class_key="warrior"))
         assert success
         assert reward.gold == 100
 
     def test_event_pure_chance_fail(self):
-        event = RaidEvent(id="test", text="Test", attribute=None, dc=0,  # 0% success
-                          success=EventReward(gold=100),
-                          fail=EventReward(damage=5))
-        success, reward = resolve_event(event, Character(owner_tg_id=1, name="Test", class_key="warrior"))
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Try", attribute=None, dc=0,
+                        success=EventReward(gold=100),
+                        fail=EventReward(damage=5)),
+        ])
+        success, reward = resolve_event_option(event.options[0],
+            Character(owner_tg_id=1, name="Test", class_key="warrior"))
         assert not success
         assert reward.damage == 5
 
     def test_event_no_fail_reward(self, warrior):
         warrior.base_stats.strength = 1
-        event = RaidEvent(id="test", text="Test", attribute="strength", dc=999,
-                          success=EventReward(gold=1))
-        success, reward = resolve_event(event, warrior)
+        event = RaidEvent(id="test", text="Test", options=[
+            EventOption(text="Push", attribute="strength", dc=999,
+                        success=EventReward(gold=1)),
+        ])
+        success, reward = resolve_event_option(event.options[0], warrior)
         assert not success
         assert reward.gold == 0
         assert reward.damage == 0
