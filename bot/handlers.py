@@ -820,7 +820,7 @@ async def _handle_player_turn(
     await _save_char(char)
     advance_turn_core(enc)
     await _advance_turn(context, session)
-        return
+    return
 
     if enemy.hp <= 0:
         enc.finished = True
