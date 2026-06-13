@@ -209,6 +209,8 @@ def build_initiative_order(
     """
     entries = []
     for uid, char in characters.items():
+        if not char.alive or char.hp <= 0:
+            continue
         init = roll_initiative(char.stats.agility)
         entries.append({"type": "player", "uid": uid, "name": char.name, "initiative": init})
         if char.companion and char.companion.alive:
@@ -385,7 +387,7 @@ def pick_enemy_target(
     chars: dict[int, Character],
 ) -> tuple[int, Character]:
     """Выбирает случайную живую цель для атаки врага."""
-    alive = [(uid, c) for uid, c in chars.items() if c.alive]
+    alive = [(uid, c) for uid, c in chars.items() if c.alive and c.hp > 0]
     if not alive:
         return 0, list(chars.values())[0]
     import random as _random

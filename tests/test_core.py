@@ -334,6 +334,30 @@ class TestInitiative:
         assert len(players) == 2
         assert players[0]["uid"] != players[1]["uid"]
 
+    def test_build_initiative_order_skips_dead_player(self, warrior, encounter):
+        dead = Character(owner_tg_id=2, name="Dead", class_key="mage", alive=False, hp=0)
+        order = build_initiative_order({1: warrior, 2: dead}, encounter)
+        uids = [e["uid"] for e in order if e["type"] == "player"]
+        assert 2 not in uids
+        assert 1 in uids
+
+    def test_build_initiative_order_skips_dead_with_hp_zero(self, warrior, encounter):
+        dead = Character(owner_tg_id=2, name="Dead", class_key="mage")
+        dead.hp = 0  # __post_init__ fixes hp, so set after construction
+        order = build_initiative_order({1: warrior, 2: dead}, encounter)
+        uids = [e["uid"] for e in order if e["type"] == "player"]
+        assert 2 not in uids
+        assert 1 in uids
+
+    def test_build_initiative_order_all_dead_returns_empty_players(self, encounter):
+        dead1 = Character(owner_tg_id=1, name="D1", class_key="mage")
+        dead1.hp = 0
+        dead1.alive = False
+        order = build_initiative_order({1: dead1}, encounter)
+        players = [e for e in order if e["type"] == "player"]
+        assert len(players) == 0
+        assert any(e["type"] == "enemy" for e in order)
+
     def test_pick_enemy_target(self, warrior):
         chars = {1: warrior, 2: Character(owner_tg_id=2, name="Ally", class_key="mage")}
         uid, char = pick_enemy_target(chars)
@@ -345,6 +369,24 @@ class TestInitiative:
         chars = {1: warrior, 2: dead}
         uid, char = pick_enemy_target(chars)
         assert uid == 1
+
+    def test_pick_enemy_target_filters_hp_zero(self, warrior):
+        dead = Character(owner_tg_id=2, name="Dead", class_key="mage")
+        dead.hp = 0
+        dead.alive = True
+        chars = {1: warrior, 2: dead}
+        uid, char = pick_enemy_target(chars)
+        assert uid == 1
+
+    def test_pick_enemy_target_no_alive_returns_first(self):
+        dead1 = Character(owner_tg_id=1, name="D1", class_key="mage")
+        dead1.hp = 0
+        dead1.alive = False
+        dead2 = Character(owner_tg_id=2, name="D2", class_key="mage")
+        dead2.hp = 0
+        dead2.alive = False
+        uid, char = pick_enemy_target({1: dead1, 2: dead2})
+        assert uid == 0  # fallback when no alive targets
 
     def test_create_enemy(self, encounter):
         enemy = create_enemy(encounter)
@@ -803,6 +845,17 @@ class TestEquipment:
     def test_take_damage_clamp_to_zero(self, warrior):
         warrior.take_damage(999999)
         assert warrior.hp == 0
+
+    def test_take_damage_sets_alive_false(self, warrior):
+        assert warrior.alive is True
+        warrior.take_damage(999999)
+        assert warrior.hp == 0
+        assert warrior.alive is False
+
+    def test_take_damage_preserves_alive_when_hp_positive(self, warrior):
+        warrior.take_damage(10)
+        assert warrior.alive is True
+        assert warrior.hp > 0
 
     def test_heal(self, warrior):
         warrior.hp = 10

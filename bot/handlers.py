@@ -26,10 +26,10 @@ from config import MAX_CHARACTERS_PER_PLAYER, MAX_GROUP_SIZE, ADMIN_PASSWORD, DU
 from core.character import Character
 from core.classes import CLASSES, CLASS_NAMES_RU, StatBlock
 from core.locations import LOCATIONS, get_location
-from core.raid import create_raid, generate_loot, distribute_exp_gold, RaidSession, RaidEncounter, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn, build_initiative_order, get_current_turn, advance_turn_core, pick_enemy_target
+from core.raid import create_raid, generate_loot, distribute_exp_gold, RaidSession, RaidEncounter, RaidStatus, session_to_dict, session_from_dict, create_enemy, resolve_player_turn, resolve_companion_turn, resolve_enemy_turn, build_initiative_order, get_current_turn, advance_turn_core, pick_enemy_target, apply_mob_status_effects
 from core.economy import MARKET
 from data.storage import storage
-from ai.narrative import call_narrative_api
+from ai.narrative import call_narrative_api, decide_status_effect
 from core.events import resolve_event_option, apply_event_reward, event_from_dict, RaidEvent, EventOption, EventReward
 from core.items import Item as InventoryItem
 from utils.rng import roll_chance
@@ -690,6 +690,9 @@ async def cb_raid_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not char:
         await query.edit_message_text("Персонаж не найден.", reply_markup=main_menu())
         return
+    if not char.alive or char.hp <= 0:
+        await query.edit_message_text("Вы погибли и не можете действовать.", reply_markup=main_menu())
+        return
     context.user_data["raid_msg_chat"] = query.message.chat_id
     context.user_data["raid_msg_id"] = query.message.message_id
     context.user_data["raid_msg_thread"] = query.message.message_thread_id
@@ -776,6 +779,21 @@ async def _handle_player_turn(
         await update.message.reply_text(f"❌ Ошибка боя: {e}")
         return
 
+    effect_name = "none"
+    if player_attack and player_attack.final_damage > 0 and not player_attack.is_dodged:
+        try:
+            effect_name = await decide_status_effect(
+                text, player_info,
+                [{"name": enc.enemy_template["name"], "hp": enemy.hp, "max_hp": enc.enemy_max_hp}],
+                weapon_attrs, player_attack.final_damage,
+            )
+            if effect_name != "none":
+                enc.active_effects = apply_mob_status_effects(
+                    enc.active_effects, effect_name, player_attack.final_damage,
+                )
+        except Exception:
+            log.exception("decide_status_effect failed")
+
     try:
         nn = await _nn("player_narrative", damage=player_attack.final_damage if player_attack else 0)
         player_narrative = nn.get("player_narrative", "") if nn else "Вы атакуете."
@@ -800,9 +818,9 @@ async def _handle_player_turn(
 
     if char.hp <= 0:
         lines.append("\n💀 **Вы погибли от ран!**")
+        char.alive = False
         char.count_raid += 1
         char.in_raid = False
-        char.hp = char.max_hp
         char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
         char.release_companion()
         await _save_char(char)
@@ -811,9 +829,18 @@ async def _handle_player_turn(
             _cleanup_raid(context)
             await update.message.reply_text("\n".join(lines), reply_markup=raid_failed())
         else:
-            await update.message.reply_text("\n".join(lines))
-            advance_turn_core(enc)
-            await _advance_turn(context, session)
+            alive_count = sum(
+                1 for uid_str in session.participant_names
+                if (c := await _get_char(int(uid_str), context)) and c.alive and c.hp > 0
+            )
+            if alive_count == 0:
+                session.status = RaidStatus.FAILED
+                _cleanup_raid(context)
+                await _notify_participants(context, session, "💀 **Все участники погибли! Рейд провален.**", raid_failed())
+            else:
+                await update.message.reply_text("\n".join(lines))
+                advance_turn_core(enc)
+                await _advance_turn(context, session)
         return
 
     lines.append(f"🗡 _ваш ход закончен_")
@@ -901,6 +928,7 @@ async def _resolve_auto_turn(
         atk = resolve_enemy_turn(target_char, enemy_obj, enc, enemy_mods)
         died = target_char.hp <= 0
         if died:
+            target_char.alive = False
             target_char.count_raid += 1
             target_char.durability_damage_all(percent=DEATH_DURABILITY_LOSS)
             target_char.release_companion()
@@ -945,6 +973,11 @@ async def _advance_turn(context, session: RaidSession):
             break
 
         if turn["type"] == "player":
+            chars = await _get_participant_chars(context, session)
+            player_char = chars.get(turn["uid"])
+            if player_char and (not player_char.alive or player_char.hp <= 0):
+                advance_turn_core(enc)
+                continue
             session.turn_pending_uid = turn["uid"]
             enc.turn_timeout_deadline = time.time() + TURN_TIMEOUT
             await _save_session(context, session)
@@ -966,6 +999,18 @@ async def _advance_turn(context, session: RaidSession):
 
         if enc.finished:
             break
+
+        if turn["type"] == "enemy":
+            chars = await _get_participant_chars(context, session)
+            alive_any = any(c.alive and c.hp > 0 and c.in_raid for c in chars.values())
+            if not alive_any:
+                for c in chars.values():
+                    c.in_raid = False
+                    await _save_char(c)
+                session.status = RaidStatus.FAILED
+                _cleanup_raid(context)
+                parts.append("💀 **Все участники погибли! Рейд провален.**")
+                break
 
         advance_turn_core(enc)
 

@@ -67,6 +67,107 @@ SYSTEM_PROMPTS: dict[str, str] = {
     ),
 }
 
+EFFECT_SYSTEM_PROMPT = (
+    "Ты — судья статус-эффектов в RPG-бою.\n"
+    "Определи, должна ли атака игрока наложить временный эффект на врага.\n\n"
+    "Выбери ОДИН вариант:\n"
+    "- bleed: кровотечение (урон с течением времени)\n"
+    "- poison: яд (урон с течением времени)\n"
+    "- stun: оглушение (враг пропускает следующий ход)\n"
+    "- none: без эффекта\n\n"
+    "Учитывай описание действия, тип оружия и класс персонажа.\n"
+    "Большинство обычных атак — \"none\".\n"
+    "Ответь ТОЛЬКО словом: bleed, poison, stun или none."
+)
+
+EFFECT_PARSE_MAP = {
+    "bleed": "bleed",
+    "poison": "poison",
+    "stun": "stun",
+    "none": "none",
+}
+
+
+def _build_effect_context(
+    player_action: str,
+    player: dict,
+    enemies: list[dict],
+    weapon_attrs: list[str],
+    damage: int,
+) -> str:
+    ctx = (
+        f"Игрок: {player.get('name', '?')} ({player.get('class', '?')})\n"
+    )
+    weapon_info = player.get("weapon", "")
+    if weapon_info:
+        ctx += f"Оружие: {weapon_info}\n"
+    if weapon_attrs:
+        ctx += f"Атрибуты оружия: {', '.join(weapon_attrs)}\n"
+    ctx += "Враги:\n"
+    for i, e in enumerate(enemies, 1):
+        ctx += f"  {i}. {e.get('name', '?')} — HP {e.get('hp', '?')}/{e.get('max_hp', '?')}\n"
+    ctx += f"\nДействие игрока: {player_action}\n"
+    ctx += f"Нанесённый урон: {damage}\n"
+    ctx += "\nНужен ли статус-эффект? Ответь одним словом: bleed, poison, stun или none."
+    return ctx
+
+
+def parse_effect_response(text: str) -> str:
+    text = text.strip().lower()
+    for word in ("bleed", "poison", "stun", "none"):
+        if word in text:
+            return word
+    return "none"
+
+
+async def decide_status_effect(
+    player_action: str,
+    player: dict,
+    enemies: list[dict],
+    weapon_attrs: list[str],
+    damage: int,
+) -> str:
+    ctx = _build_effect_context(player_action, player, enemies, weapon_attrs, damage)
+    messages = [
+        {"role": "system", "content": EFFECT_SYSTEM_PROMPT},
+        {"role": "user", "content": ctx},
+    ]
+
+    if not config.NN_API_URL:
+        return "none"
+
+    url = config.NN_API_URL.rstrip("/")
+    if not url.endswith("/chat/completions"):
+        url += "/chat/completions"
+
+    headers = {"Authorization": f"Bearer {config.NN_API_KEY}", "Content-Type": "application/json"}
+    body = {
+        "model": config.NN_MODEL,
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 16,
+    }
+
+    for attempt in range(1, config.NN_MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=config.NN_TIMEOUT) as client:
+                resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code != 200:
+                log.warning("NN API %d (attempt %d/%d): %.100s", resp.status_code, attempt, config.NN_MAX_RETRIES, resp.text)
+                continue
+            data = resp.json()
+            content = _extract_content(data)
+            if content is None:
+                continue
+            return parse_effect_response(content)
+        except httpx.TimeoutException:
+            log.warning("NN API timeout (effect, attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
+        except httpx.RequestError as e:
+            log.warning("NN API error (effect): %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
+
+    return "none"
+
+
 MODE_KEY_MAP: dict[str, str] = {
     "player_modifiers": "actions",
     "player_narrative": "player_narrative",

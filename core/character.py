@@ -228,6 +228,8 @@ class Character:
 
     def take_damage(self, raw_damage: int) -> int:
         self.hp = max(0, self.hp - raw_damage)
+        if self.hp == 0:
+            self.alive = False
         return raw_damage
 
     def heal(self, amount: int) -> int:
