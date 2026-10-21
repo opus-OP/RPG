@@ -12,6 +12,7 @@ from telegram.ext import ApplicationBuilder
 import config
 from data.storage import storage
 from core.economy import MARKET
+from bot.ratelimit import RetryBot
 from bot.handlers import register_handlers, _load_settings
 
 logging.basicConfig(
@@ -59,7 +60,7 @@ def main():
 
     app = (
         ApplicationBuilder()
-        .token(config.BOT_TOKEN)
+        .bot(RetryBot(config.BOT_TOKEN))
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
