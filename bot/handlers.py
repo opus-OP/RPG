@@ -84,6 +84,16 @@ async def _save_setting(key: str, value: str):
         _allowed_topic_id = int(value) if value else None
 
 
+def _group_message_allowed(chat_id: int, msg) -> bool:
+    """Разрешённый групповой чат: без ограничения по топику — любые сообщения
+    (в том числе в обычной группе без топиков), с ограничением — только из нужного топика."""
+    if _allowed_chat_id is None or chat_id != _allowed_chat_id:
+        return False
+    if _allowed_topic_id is None:
+        return True
+    return bool(msg is not None and msg.is_topic_message and msg.message_thread_id == _allowed_topic_id)
+
+
 class _ChatTopicFilter(MessageFilter):
     """Пропускает ЛС и сообщения из указанного топика группы."""
 
@@ -91,13 +101,7 @@ class _ChatTopicFilter(MessageFilter):
         chat = message.chat
         if chat.type == "private":
             return True
-        if _allowed_chat_id is not None and chat.id == _allowed_chat_id:
-            if message.is_topic_message:
-                if _allowed_topic_id is not None:
-                    return message.message_thread_id == _allowed_topic_id
-                return True
-            return False
-        return False
+        return _group_message_allowed(chat.id, message)
 
 
 ALLOWED_CHAT_FILTER = _ChatTopicFilter()
@@ -121,14 +125,7 @@ def _chat_allowed(update: Update) -> bool:
         return False
     if chat.type == "private":
         return True
-    if _allowed_chat_id is not None and chat.id == _allowed_chat_id:
-        msg = update.effective_message
-        if msg and msg.is_topic_message:
-            if _allowed_topic_id is not None:
-                return msg.message_thread_id == _allowed_topic_id
-            return True
-        return False
-    return False
+    return _group_message_allowed(chat.id, update.effective_message)
 
 
 def _attack_desc(owner: str, result, noun: str = "нанесли") -> str:

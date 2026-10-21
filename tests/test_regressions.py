@@ -316,3 +316,19 @@ class TestValidators:
     @pytest.mark.parametrize("name", ["Hero", "Дарк Рыцарь", "a-b", "Иван_2", "Aб"])
     def test_good_names(self, name):
         assert validate_character_name(name) is True
+
+
+def test_group_without_topics_works_after_set_here(monkeypatch):
+    """/set_here в обычной группе (без топиков) писал «отвечаю во всём чате», но бот молчал."""
+    import bot.handlers as H
+    from types import SimpleNamespace as NS
+    monkeypatch.setattr(H, "_allowed_chat_id", -100)
+    monkeypatch.setattr(H, "_allowed_topic_id", None)
+    plain = NS(is_topic_message=False, message_thread_id=None)
+    topic = NS(is_topic_message=True, message_thread_id=7)
+    upd = lambda cid, m: NS(effective_chat=NS(type="supergroup", id=cid), effective_message=m)
+    assert H._chat_allowed(upd(-100, plain)) and H._chat_allowed(upd(-100, topic))
+    assert not H._chat_allowed(upd(-200, plain))
+    monkeypatch.setattr(H, "_allowed_topic_id", 7)
+    assert H._chat_allowed(upd(-100, topic)) and not H._chat_allowed(upd(-100, plain))
+    assert not H._chat_allowed(upd(-100, NS(is_topic_message=True, message_thread_id=8)))
