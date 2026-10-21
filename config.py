@@ -78,10 +78,34 @@ DEATH_DURABILITY_LOSS = 0.10    # потеря прочности экипиро
 DURABILITY_LOSS_PERCENT = 3     # потеря прочности экипировки за рейд (%)
 
 # ═══════════════════════════════════════════════════════════════
+# Ивент-кампании (/campaign_begin) и конфеты
+# ═══════════════════════════════════════════════════════════════
+
+CAMPAIGN_ENABLED = os.getenv("CAMPAIGN_ENABLED", "1") != "0"
+
+# После кампании бот пишет в чат одну строку-команду со всеми участниками:
+#   /<CANDY_COMMAND>[@<MAIN_BOT_USERNAME>] <tg_id>:<конфет> <tg_id>:<конфет> ...
+# Суффикс @username нужен, чтобы основной бот увидел команду в группе
+# (боты не видят сообщения друг друга, кроме команд с адресацией; либо включите
+# Bot-to-Bot Communication Mode в @BotFather у обоих ботов).
+CANDY_COMMAND = os.getenv("CANDY_COMMAND", "campaign_reward")
+MAIN_BOT_USERNAME = os.getenv("MAIN_BOT_USERNAME", "").lstrip("@")
+_candy_chat = os.getenv("CANDY_REWARD_CHAT_ID")
+CANDY_REWARD_CHAT_ID = int(_candy_chat) if _candy_chat else None  # None = чат, где шла кампания
+
+CAMPAIGN_MADNESS_ACTION_CHANCE = 0.25  # шанс безумного героя действовать вопреки воле игрока
+CAMPAIGN_FALLEN_BOSS_SHARE = 1.0       # доля награды за босса для павших героев (1.0 = полная)
+CAMPAIGN_PARTY_HP_SCALE = 1.0          # +HP врагов за каждого игрока сверх первого
+CAMPAIGN_PARTY_ATK_SCALE = 0.55        # +урон врагов за каждого игрока сверх первого
+CAMPAIGN_AMBUSH_CHANCE = 0.15          # шанс засады в боевой комнате
+CAMPAIGN_PRIORITY_TARGET_CHANCE = 0.65 # шанс, что враг выберет носителя «Амулета-метки»
+
+# ═══════════════════════════════════════════════════════════════
 # Админ
 # ═══════════════════════════════════════════════════════════════
 
-ADMIN_PASSWORD = "krop"
+# Пароль админа берётся из окружения. Пустой пароль = админ-режим отключён.
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 # ═══════════════════════════════════════════════════════════════
 # Генерация лута

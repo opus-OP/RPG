@@ -1,0 +1,951 @@
+{
+ "$schema": "Ивент-кампании: мобы, локации, цены (конфеты) и находки. Числа балансируются через hp_mult/atk_mult локации.",
+ "mobs": {
+  "bandit": {
+   "name": "Разбойник",
+   "hp": 70,
+   "defense": 3,
+   "dodge_chance": 0.06,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 9,
+   "atk_max": 15,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Оборванец с кривым тесаком",
+   "attack_secondary": {
+    "damage_min": 6,
+    "damage_max": 11,
+    "chance": 0.3,
+    "damage_type": "physical",
+    "description": "Бросок ножа"
+   }
+  },
+  "wolf": {
+   "name": "Лесной волк",
+   "hp": 60,
+   "defense": 2,
+   "dodge_chance": 0.08,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 8,
+   "atk_max": 14,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Тощий хищник с горящими глазами",
+   "attack_secondary": {
+    "damage_min": 6,
+    "damage_max": 10,
+    "chance": 0.25,
+    "damage_type": "bleed",
+    "description": "Рваная рана"
+   }
+  },
+  "spider": {
+   "name": "Паук-охотник",
+   "hp": 55,
+   "defense": 2,
+   "dodge_chance": 0.08,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 7,
+   "atk_max": 12,
+   "atk_damage_type": "poison",
+   "madness_chance": 0.0,
+   "description": "Мохнатый паук размером с собаку",
+   "attack_secondary": {
+    "damage_min": 3,
+    "damage_max": 6,
+    "chance": 0.15,
+    "damage_type": "stun",
+    "description": "Липкая паутина"
+   }
+  },
+  "old_witch": {
+   "name": "Старая ведьма",
+   "hp": 230,
+   "defense": 4,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 13,
+   "atk_max": 21,
+   "atk_damage_type": "fire",
+   "madness_chance": 0.0,
+   "description": "Горбатая старуха, чья хижина стоит на курьих ножках",
+   "attack_secondary": {
+    "damage_min": 8,
+    "damage_max": 12,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Проклятие"
+   }
+  },
+  "zombie": {
+   "name": "Зомби",
+   "hp": 90,
+   "defense": 2,
+   "dodge_chance": 0.0,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 9,
+   "atk_max": 14,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Медленный гниющий мертвец"
+  },
+  "ghoul": {
+   "name": "Упырь",
+   "hp": 75,
+   "defense": 3,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 8,
+   "atk_max": 14,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Тощий падальщик с длинными когтями",
+   "attack_secondary": {
+    "damage_min": 7,
+    "damage_max": 11,
+    "chance": 0.3,
+    "damage_type": "bleed",
+    "description": "Когти"
+   }
+  },
+  "snake": {
+   "name": "Гигантская змея",
+   "hp": 40,
+   "defense": 0,
+   "dodge_chance": 0.12,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 6,
+   "atk_max": 10,
+   "atk_damage_type": "poison",
+   "madness_chance": 0.0,
+   "description": "Пёстрая змея толщиной с руку"
+  },
+  "zombie_boar": {
+   "name": "Зомби-королевский кабан",
+   "hp": 300,
+   "defense": 5,
+   "dodge_chance": 0.03,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 15,
+   "atk_max": 23,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Огромный кабан в обрывках королевской попоны",
+   "attack_secondary": {
+    "damage_min": 12,
+    "damage_max": 18,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Таранный удар"
+   }
+  },
+  "skeleton": {
+   "name": "Скелет-воин",
+   "hp": 85,
+   "defense": 5,
+   "dodge_chance": 0.04,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 11,
+   "atk_max": 17,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Гремящие кости в ржавых доспехах"
+  },
+  "wraith": {
+   "name": "Неприкаянный дух",
+   "hp": 65,
+   "defense": 1,
+   "dodge_chance": 0.15,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 10,
+   "atk_max": 16,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.06,
+   "description": "Полупрозрачная тень, шепчущая чужие имена"
+  },
+  "imp": {
+   "name": "Бес",
+   "hp": 55,
+   "defense": 2,
+   "dodge_chance": 0.1,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 9,
+   "atk_max": 15,
+   "atk_damage_type": "fire",
+   "madness_chance": 0.0,
+   "description": "Юркий рогатый проказник с горящим хвостом"
+  },
+  "great_necromancer": {
+   "name": "Великий некромант",
+   "hp": 380,
+   "defense": 6,
+   "dodge_chance": 0.06,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 16,
+   "atk_max": 26,
+   "atk_damage_type": "poison",
+   "madness_chance": 0.1,
+   "description": "Иссохший маг в мантии из погребальных саванов",
+   "attack_secondary": {
+    "damage_min": 10,
+    "damage_max": 16,
+    "chance": 0.15,
+    "damage_type": "stun",
+    "description": "Касание смерти"
+   }
+  },
+  "gargoyle": {
+   "name": "Каменная горгулья",
+   "hp": 150,
+   "defense": 8,
+   "dodge_chance": 0.03,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 15,
+   "atk_max": 23,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Ожившая каменная химера с крыши дворца",
+   "attack_secondary": {
+    "damage_min": 12,
+    "damage_max": 18,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Удар хвостом"
+   }
+  },
+  "gargoyle_winged": {
+   "name": "Крылатая горгулья",
+   "hp": 120,
+   "defense": 5,
+   "dodge_chance": 0.15,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 14,
+   "atk_max": 22,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Быстрая тварь, падающая с потолка",
+   "attack_secondary": {
+    "damage_min": 8,
+    "damage_max": 14,
+    "chance": 0.25,
+    "damage_type": "bleed",
+    "description": "Пикирование"
+   }
+  },
+  "gargoyle_guard": {
+   "name": "Горгулья-страж",
+   "hp": 190,
+   "defense": 12,
+   "dodge_chance": 0.0,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 14,
+   "atk_max": 20,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Неподвижная, пока не подойдёшь слишком близко"
+  },
+  "dracula": {
+   "name": "Граф Дракула",
+   "hp": 520,
+   "defense": 7,
+   "dodge_chance": 0.1,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 20,
+   "atk_max": 30,
+   "atk_damage_type": "bleed",
+   "madness_chance": 0.12,
+   "description": "Хозяин Багрового дворца, бледный и безупречно вежливый",
+   "attack_secondary": {
+    "damage_min": 14,
+    "damage_max": 22,
+    "chance": 0.3,
+    "damage_type": "bleed",
+    "description": "Укус"
+   }
+  },
+  "priest": {
+   "name": "Жрец",
+   "hp": 100,
+   "defense": 4,
+   "dodge_chance": 0.04,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 14,
+   "atk_max": 22,
+   "atk_damage_type": "fire",
+   "madness_chance": 0.0,
+   "description": "В багровой рясе, с кадилом, из которого валит чёрный дым"
+  },
+  "brawler": {
+   "name": "Сектант-дебошир",
+   "hp": 130,
+   "defense": 3,
+   "dodge_chance": 0.04,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 16,
+   "atk_max": 24,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Пьяный от экстаза детина с цепью",
+   "attack_secondary": {
+    "damage_min": 10,
+    "damage_max": 16,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Удар кастетом"
+   }
+  },
+  "warlock": {
+   "name": "Сектант-колдун",
+   "hp": 90,
+   "defense": 2,
+   "dodge_chance": 0.06,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 15,
+   "atk_max": 25,
+   "atk_damage_type": "poison",
+   "madness_chance": 0.08,
+   "description": "Шепчет молитвы, от которых темнеет в глазах"
+  },
+  "fanatic": {
+   "name": "Фанатик",
+   "hp": 120,
+   "defense": 2,
+   "dodge_chance": 0.02,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 18,
+   "atk_max": 27,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Не чувствует боли и не знает страха",
+   "attack_secondary": {
+    "damage_min": 10,
+    "damage_max": 16,
+    "chance": 0.25,
+    "damage_type": "bleed",
+    "description": "Самобичевание"
+   }
+  },
+  "cultist": {
+   "name": "Культист",
+   "hp": 100,
+   "defense": 3,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 15,
+   "atk_max": 22,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Безликий послушник в капюшоне"
+  },
+  "crusader": {
+   "name": "Сектант-крестоносец",
+   "hp": 140,
+   "defense": 6,
+   "dodge_chance": 0.03,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 17,
+   "atk_max": 25,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Тяжёлая броня с вычурным символом ордена"
+  },
+  "templar": {
+   "name": "Тамплиер",
+   "hp": 170,
+   "defense": 8,
+   "dodge_chance": 0.03,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 16,
+   "atk_max": 24,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.0,
+   "description": "Старый рыцарь ордена, выживший из ума",
+   "attack_secondary": {
+    "damage_min": 10,
+    "damage_max": 16,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Удар щитом"
+   }
+  },
+  "madman": {
+   "name": "Сумасшедший",
+   "hp": 90,
+   "defense": 0,
+   "dodge_chance": 0.1,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 18,
+   "atk_max": 28,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.12,
+   "description": "Хохочет и дерётся голыми руками"
+  },
+  "prophet": {
+   "name": "Пророк",
+   "hp": 100,
+   "defense": 2,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 14,
+   "atk_max": 24,
+   "atk_damage_type": "fire",
+   "madness_chance": 0.15,
+   "description": "Видит ваш конец и охотно о нём рассказывает",
+   "attack_secondary": {
+    "damage_min": 6,
+    "damage_max": 10,
+    "chance": 0.25,
+    "damage_type": "stun",
+    "description": "Пророчество"
+   }
+  },
+  "cult_deity": {
+   "name": "Сектантское божество",
+   "hp": 650,
+   "defense": 8,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 24,
+   "atk_max": 36,
+   "atk_damage_type": "fire",
+   "madness_chance": 0.12,
+   "description": "Нечто огромное, едва помещающееся в зале храма",
+   "attack_secondary": {
+    "damage_min": 14,
+    "damage_max": 22,
+    "chance": 0.15,
+    "damage_type": "stun",
+    "description": "Взгляд бездны"
+   }
+  },
+  "grand_master": {
+   "name": "Великий магистр",
+   "hp": 600,
+   "defense": 12,
+   "dodge_chance": 0.05,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 22,
+   "atk_max": 34,
+   "atk_damage_type": "physical",
+   "madness_chance": 0.06,
+   "description": "Предводитель ордена в чёрных латах",
+   "attack_secondary": {
+    "damage_min": 14,
+    "damage_max": 22,
+    "chance": 0.25,
+    "damage_type": "bleed",
+    "description": "Рассекающий удар"
+   }
+  },
+  "madness_flesh": {
+   "name": "Madness in flesh",
+   "hp": 700,
+   "defense": 5,
+   "dodge_chance": 0.08,
+   "crit_chance": 0.05,
+   "crit_multiplier": 2.0,
+   "atk_min": 26,
+   "atk_max": 38,
+   "atk_damage_type": "poison",
+   "madness_chance": 0.2,
+   "description": "Бесформенная масса из лиц, которые никак не замолчат",
+   "attack_secondary": {
+    "damage_min": 14,
+    "damage_max": 22,
+    "chance": 0.2,
+    "damage_type": "stun",
+    "description": "Безумный вопль"
+   }
+  }
+ },
+ "locations": {
+  "thicket": {
+   "name": "Чаща",
+   "icon": "🌲",
+   "difficulty": "обычная",
+   "tier": 1,
+   "price": 200,
+   "description": "Непроходимая чаща, где хозяйничают бандиты, волки и пауки. В глубине стоит хижина старой ведьмы.",
+   "mobs": [
+    "bandit",
+    "wolf",
+    "spider"
+   ],
+   "boss": "old_witch",
+   "start_level": 1,
+   "hp_mult": 1.0,
+   "atk_mult": 1.0,
+   "chest_candy": [
+    20,
+    30
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Свежий труп оленя: мясо ещё тёплое, на вид вполне съедобное.",
+     "use": "🍖 Съесть"
+    },
+    {
+     "kind": "damage",
+     "text": "Туша зверя с зеленоватым налётом. Пахнет… спорно.",
+     "use": "🍖 Съесть"
+    },
+    {
+     "kind": "heal",
+     "text": "Куст с ярко-красными ягодами.",
+     "use": "🍒 Попробовать"
+    },
+    {
+     "kind": "damage",
+     "text": "Грибы с пятнистыми шляпками.",
+     "use": "🍄 Съесть"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Покинутый лагерь охотников: на колоде лежит заточенный нож.",
+     "use": "🔪 Взять"
+    },
+    {
+     "kind": "buff_def",
+     "text": "На ветке висит дублёный кожаный жилет.",
+     "use": "🦺 Надеть"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Странный пузырёк на пне. Этикетка стёрлась.",
+     "use": "🧪 Выпить"
+    },
+    {
+     "kind": "nothing",
+     "text": "Старый пень, внутри ничего, кроме муравьёв.",
+     "use": "🔍 Осмотреть"
+    }
+   ],
+   "intro": "Вы входите под кроны вековых деревьев. Тропа почти не видна…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "preserve": {
+   "name": "Заповедник",
+   "icon": "🦌",
+   "difficulty": "обычная",
+   "tier": 1,
+   "price": 200,
+   "description": "Заброшенный заповедник, где зомби, упыри и змеи охраняют мёртвого короля леса.",
+   "mobs": [
+    "zombie",
+    "ghoul",
+    "snake"
+   ],
+   "boss": "zombie_boar",
+   "start_level": 1,
+   "hp_mult": 0.85,
+   "atk_mult": 0.85,
+   "chest_candy": [
+    20,
+    30
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Свежий труп оленя: мясо ещё тёплое, на вид вполне съедобное.",
+     "use": "🍖 Съесть"
+    },
+    {
+     "kind": "damage",
+     "text": "Туша зверя с зеленоватым налётом. Пахнет… спорно.",
+     "use": "🍖 Съесть"
+    },
+    {
+     "kind": "heal",
+     "text": "Куст с ярко-красными ягодами.",
+     "use": "🍒 Попробовать"
+    },
+    {
+     "kind": "damage",
+     "text": "Грибы с пятнистыми шляпками.",
+     "use": "🍄 Съесть"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Покинутый лагерь охотников: на колоде лежит заточенный нож.",
+     "use": "🔪 Взять"
+    },
+    {
+     "kind": "buff_def",
+     "text": "На ветке висит дублёный кожаный жилет.",
+     "use": "🦺 Надеть"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Странный пузырёк на пне. Этикетка стёрлась.",
+     "use": "🧪 Выпить"
+    },
+    {
+     "kind": "nothing",
+     "text": "Старый пень, внутри ничего, кроме муравьёв.",
+     "use": "🔍 Осмотреть"
+    }
+   ],
+   "intro": "Ворота заповедника скрипят. Внутри слишком тихо…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "ruins": {
+   "name": "Руины",
+   "icon": "🏚",
+   "difficulty": "повышенная",
+   "tier": 2,
+   "price": 250,
+   "description": "Древние руины, населённые скелетами и нечистью. Ими повелевает великий некромант.",
+   "mobs": [
+    "skeleton",
+    "wraith",
+    "imp"
+   ],
+   "boss": "great_necromancer",
+   "start_level": 3,
+   "hp_mult": 1.05,
+   "atk_mult": 1.05,
+   "chest_candy": [
+    25,
+    35
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Фляга с мутной жидкостью, пахнущей мятой и травами.",
+     "use": "🧪 Выпить"
+    },
+    {
+     "kind": "damage",
+     "text": "Фляга с чем-то, что пахнет формалином.",
+     "use": "🧪 Выпить"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "В руках скелета зажат хороший клинок.",
+     "use": "⚔️ Забрать"
+    },
+    {
+     "kind": "buff_def",
+     "text": "В нише лежит щит, почти не тронутый ржавчиной.",
+     "use": "🛡 Взять"
+    },
+    {
+     "kind": "debuff_def",
+     "text": "Проклятый плащ на крюке: так и просится на плечи.",
+     "use": "🧥 Надеть"
+    },
+    {
+     "kind": "heal",
+     "text": "Полупустая бутыль целебной настойки на алтаре.",
+     "use": "🧪 Выпить"
+    },
+    {
+     "kind": "nothing",
+     "text": "Кучка пепла и костей. Ничего ценного.",
+     "use": "🔍 Порыться"
+    }
+   ],
+   "intro": "Между обвалившихся арок гуляет холодный ветер…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "palace": {
+   "name": "Багровый дворец",
+   "icon": "🏰",
+   "difficulty": "высокая",
+   "tier": 3,
+   "price": 350,
+   "description": "Дворец, где каменные горгульи стерегут покои графа Дракулы.",
+   "mobs": [
+    "gargoyle",
+    "gargoyle_winged",
+    "gargoyle_guard"
+   ],
+   "boss": "dracula",
+   "start_level": 5,
+   "hp_mult": 1.1,
+   "atk_mult": 1.1,
+   "chest_candy": [
+    30,
+    40
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Хрустальный графин с густым красным вином.",
+     "use": "🍷 Выпить"
+    },
+    {
+     "kind": "damage",
+     "text": "Бокал с тёмной жидкостью. Слишком густой для вина.",
+     "use": "🍷 Выпить"
+    },
+    {
+     "kind": "buff_def",
+     "text": "Парадные латы в галерее портретов.",
+     "use": "🛡 Примерить"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Дуэльная шпага на бархатной подушке.",
+     "use": "🗡 Взять"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Блюдо с аппетитным угощением. Пахнет подозрительно сладко.",
+     "use": "🍰 Попробовать"
+    },
+    {
+     "kind": "nothing",
+     "text": "Пустой гроб в нише. Пока пустой.",
+     "use": "🔍 Заглянуть"
+    }
+   ],
+   "intro": "Багровый свет ложится на мраморные ступени. Двери открываются сами…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "dungeon_temple": {
+   "name": "Темнейшее подземелье: главный храм",
+   "icon": "⛧",
+   "difficulty": "убер",
+   "tier": 4,
+   "price": 750,
+   "description": "Главный храм секты. Жрецы, дебоширы и колдуны служат божеству, которому нет имени.",
+   "mobs": [
+    "priest",
+    "brawler",
+    "warlock",
+    "fanatic"
+   ],
+   "boss": "cult_deity",
+   "start_level": 7,
+   "hp_mult": 1.15,
+   "atk_mult": 1.15,
+   "chest_candy": [
+    35,
+    50
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Чаша с водой у алтаря. От неё идёт слабое тепло.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "damage",
+     "text": "Чаша с чёрной жидкостью, в которой что-то шевелится.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Жертвенный кинжал, всё ещё тёплый.",
+     "use": "🗡 Взять"
+    },
+    {
+     "kind": "buff_def",
+     "text": "Ритуальная мантия, расшитая защитными знаками.",
+     "use": "🧥 Надеть"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Свиток с шепчущими письменами.",
+     "use": "📜 Прочитать"
+    },
+    {
+     "kind": "debuff_def",
+     "text": "Амулет на цепочке. Его кто-то оставил совсем недавно.",
+     "use": "📿 Надеть"
+    },
+    {
+     "kind": "nothing",
+     "text": "Стена, исписанная бессвязными молитвами.",
+     "use": "🔍 Прочитать"
+    }
+   ],
+   "intro": "Лестница уходит вниз глубже, чем должна…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "dungeon_order": {
+   "name": "Темнейшее подземелье: штаб ордена",
+   "icon": "⚔️",
+   "difficulty": "убер",
+   "tier": 4,
+   "price": 750,
+   "description": "Штаб ордена: культисты, крестоносцы и тамплиеры охраняют великого магистра.",
+   "mobs": [
+    "cultist",
+    "crusader",
+    "templar"
+   ],
+   "boss": "grand_master",
+   "start_level": 7,
+   "hp_mult": 1.3,
+   "atk_mult": 1.3,
+   "chest_candy": [
+    35,
+    50
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Чаша с водой у алтаря. От неё идёт слабое тепло.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "damage",
+     "text": "Чаша с чёрной жидкостью, в которой что-то шевелится.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Жертвенный кинжал, всё ещё тёплый.",
+     "use": "🗡 Взять"
+    },
+    {
+     "kind": "buff_def",
+     "text": "Ритуальная мантия, расшитая защитными знаками.",
+     "use": "🧥 Надеть"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Свиток с шепчущими письменами.",
+     "use": "📜 Прочитать"
+    },
+    {
+     "kind": "debuff_def",
+     "text": "Амулет на цепочке. Его кто-то оставил совсем недавно.",
+     "use": "📿 Надеть"
+    },
+    {
+     "kind": "nothing",
+     "text": "Стена, исписанная бессвязными молитвами.",
+     "use": "🔍 Прочитать"
+    }
+   ],
+   "intro": "Каменные залы, знамёна и мёртвая тишина…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  },
+  "dungeon_asylum": {
+   "name": "Темнейшее подземелье: обитель безумия",
+   "icon": "🌀",
+   "difficulty": "убер",
+   "tier": 4,
+   "price": 750,
+   "description": "Обитель безумия: сумасшедшие, пророки и фанатики. Босс — сама безумная плоть.",
+   "mobs": [
+    "madman",
+    "prophet",
+    "fanatic"
+   ],
+   "boss": "madness_flesh",
+   "start_level": 7,
+   "hp_mult": 1.1,
+   "atk_mult": 1.1,
+   "chest_candy": [
+    35,
+    50
+   ],
+   "finds": [
+    {
+     "kind": "heal",
+     "text": "Чаша с водой у алтаря. От неё идёт слабое тепло.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "damage",
+     "text": "Чаша с чёрной жидкостью, в которой что-то шевелится.",
+     "use": "🥣 Выпить"
+    },
+    {
+     "kind": "buff_atk",
+     "text": "Жертвенный кинжал, всё ещё тёплый.",
+     "use": "🗡 Взять"
+    },
+    {
+     "kind": "buff_def",
+     "text": "Ритуальная мантия, расшитая защитными знаками.",
+     "use": "🧥 Надеть"
+    },
+    {
+     "kind": "debuff_atk",
+     "text": "Свиток с шепчущими письменами.",
+     "use": "📜 Прочитать"
+    },
+    {
+     "kind": "debuff_def",
+     "text": "Амулет на цепочке. Его кто-то оставил совсем недавно.",
+     "use": "📿 Надеть"
+    },
+    {
+     "kind": "nothing",
+     "text": "Стена, исписанная бессвязными молитвами.",
+     "use": "🔍 Прочитать"
+    }
+   ],
+   "intro": "Из темноты доносится смех. Много смеха…",
+   "fights": [
+    5,
+    7
+   ],
+   "heal_after_fight": 0.3,
+   "exp_frac": 0.5
+  }
+ }
+}

@@ -92,7 +92,7 @@ class Market:
     def cancel_listing(self, listing_id: str, owner_id: int) -> bool:
         """Отменяет объявление (только владелец)."""
         listing = self.listings.get(listing_id)
-        if not listing or listing.seller_id != owner_id:
+        if not listing or not listing.active or listing.seller_id != owner_id:
             return False
         listing.active = False
         return True
@@ -108,7 +108,7 @@ class Market:
     async def load_from_storage(self, storage: Storage):
         """Загружает активные объявления из БД при старте."""
         rows = await storage.load_active_market_listings()
-        max_id = 0
+        max_id = max(0, await storage.max_market_listing_id() + 1)
         for row in rows:
             item = row["item"]
             if item is None:
@@ -122,9 +122,8 @@ class Market:
                 active=bool(row["active"]),
             )
             self.listings[listing.listing_id] = listing
-            lid = int(row["listing_id"])
-            if lid >= max_id:
-                max_id = lid + 1
+            if str(row["listing_id"]).isdigit():
+                max_id = max(max_id, int(row["listing_id"]) + 1)
         self._next_id = max_id
 
     async def persist_listing(self, storage: Storage, listing: MarketListing):

@@ -183,6 +183,17 @@ class Storage:
         )
         await self._conn.commit()
 
+    async def max_market_listing_id(self) -> int:
+        """Максимальный числовой id объявления среди всех (в т.ч. проданных), -1 если пусто.
+
+        Нужен, чтобы после перезапуска не переиспользовать id проданных объявлений:
+        старые кнопки «Купить» в чатах иначе купили бы другой предмет.
+        """
+        cursor = await self._conn.execute("SELECT listing_id FROM market_listings")
+        rows = await cursor.fetchall()
+        ids = [int(r["listing_id"]) for r in rows if str(r["listing_id"]).isdigit()]
+        return max(ids) if ids else -1
+
     async def load_active_market_listings(self) -> list[dict]:
         cursor = await self._conn.execute(
             "SELECT * FROM market_listings WHERE active = 1"
@@ -219,6 +230,10 @@ class Storage:
         if row:
             return json.loads(row["data"])
         return None
+
+    async def list_raid_sessions(self) -> list[tuple[str, dict]]:
+        cursor = await self._conn.execute("SELECT raid_id, data FROM raids")
+        return [(row["raid_id"], json.loads(row["data"])) for row in await cursor.fetchall()]
 
     async def find_pending_raid_by_code(self, code: str) -> Optional[tuple[str, dict]]:
         cursor = await self._conn.execute("SELECT raid_id, data FROM raids")

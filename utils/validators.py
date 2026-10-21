@@ -46,13 +46,20 @@ def validate_nn_response(
         if not isinstance(action, dict):
             continue
         modifier = action.get("modifier", "")
-        value = action.get("value", 1.0)
         if modifier not in ALLOWED_MODIFIERS:
             continue
+        # нейросеть может прислать строку, None или NaN — это не должно ронять бой
+        try:
+            value = float(action.get("value", 1.0))
+        except (TypeError, ValueError):
+            continue
+        if value != value:
+            continue
         lo, hi = ALLOWED_MODIFIERS[modifier]
-        if not (lo <= value <= hi):
-            value = max(lo, min(hi, value))
-        target = str(action.get("target", "enemy"))
+        value = max(lo, min(hi, value))
+        target = str(action.get("target", "")).lower()
+        if target not in ("player", "enemy"):
+            target = ""
         validated.append({
             "target": target,
             "modifier": modifier,
@@ -65,7 +72,14 @@ def validate_character_name(name: str) -> bool:
     """Проверяет, что имя персонажа 2-24 символа, только буквы/цифры/пробел/_-."""
     if not name or len(name) < 2 or len(name) > 24:
         return False
-    return all(c.isalnum() or c in " _- " for c in name)
+    # имя попадает в callback_data кнопок (лимит Telegram — 64 байта)
+    if len(name.encode("utf-8")) > 48:
+        return False
+    if name != name.strip() or "  " in name:
+        return False
+    if not any(c.isalnum() for c in name):
+        return False
+    return all(c.isalnum() or c in " _-" for c in name)
 
 
 def clamp(value: float, lo: float, hi: float) -> float:

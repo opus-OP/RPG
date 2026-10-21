@@ -11,10 +11,17 @@ from typing import Optional
 
 from core.character import Character, Companion
 from core.locations import Location as LocationData, MobTemplate, MobAttack
-from core.combat import resolve_turn, AttackResult, StatusEffect, StatusEffectInstance, apply_enemy_modifiers
-from core.items import Item
+from core.combat import resolve_turn, AttackResult, StatusEffect, StatusEffectInstance
+from core.items import Item, new_item_uid
 from core.weapon_gen import generate_loot_weapons
 from utils.rng import secure_randint, roll_chance
+
+ENEMY_KEY = "enemy"
+
+
+def player_key(character) -> str:
+    """Ключ эффектов игрока в RaidEncounter.active_effects."""
+    return f"p{character.owner_tg_id}"
 
 
 class _Enemy:
@@ -32,6 +39,7 @@ class _Enemy:
         self.name = data["name"]
         self.attack_damage_type: str = data.get("atk_damage_type", "physical")
         self.attack_secondary: Optional[dict] = data.get("attack_secondary")
+        self.madness_chance: float = data.get("madness_chance", 0.0)
 
     def pick_attack(self) -> tuple[int, int, str, str]:
         """С вероятностью `chance` выбирает secondary-атаку, иначе основную.
@@ -96,6 +104,10 @@ class RaidSession:
     used_event_ids: set[str] = field(default_factory=set)
     turn_pending_uid: Optional[int] = None
     pending_event: Optional[dict] = None
+    event_rolled: bool = False          # событие уже разыгрывалось перед этим боем
+    chat_id: Optional[int] = None       # чат рейда (группа < 0, ЛС > 0)
+    thread_id: Optional[int] = None     # топик группы
+    campaign: Optional[dict] = None     # состояние ивент-кампании (None = обычный рейд)
 
 
 # ─── Сериализация для хранения в БД ─────────────────────────
@@ -158,6 +170,10 @@ def session_to_dict(session: RaidSession) -> dict:
         "used_event_ids": list(session.used_event_ids),
         "turn_pending_uid": session.turn_pending_uid,
         "pending_event": session.pending_event,
+        "event_rolled": session.event_rolled,
+        "chat_id": session.chat_id,
+        "thread_id": session.thread_id,
+        "campaign": session.campaign,
         "encounters": [raid_encounter_to_dict(e) for e in session.encounters],
     }
 
@@ -176,6 +192,10 @@ def session_from_dict(data: dict) -> RaidSession:
         used_event_ids=set(data.get("used_event_ids", [])),
         turn_pending_uid=data.get("turn_pending_uid"),
         pending_event=data.get("pending_event"),
+        event_rolled=data.get("event_rolled", False),
+        chat_id=data.get("chat_id"),
+        thread_id=data.get("thread_id"),
+        campaign=data.get("campaign"),
         encounters=[raid_encounter_from_dict(e) for e in data.get("encounters", [])],
     )
 
@@ -198,6 +218,7 @@ def roll_initiative(stat_value: int) -> int:
 def build_initiative_order(
     characters: dict[int, Character],
     enc: RaidEncounter,
+    mode: str = "normal",
 ) -> list[dict]:
     """Бросает инициативу для всех участников и врага, возвращает сортированный список.
 
@@ -206,12 +227,15 @@ def build_initiative_order(
     Для игроков uid — tg id, для компаньонов — uid владельца,
     для врага — "enemy".
     Компаньон идёт сразу после своего владельца.
+
+    mode: "normal" — по броску; "surprise" — герои застали врагов врасплох
+    (первым раундом ходят герои); "ambush" — засада, враг ходит первым.
     """
     entries = []
     for uid, char in characters.items():
         if not char.alive or char.hp <= 0:
             continue
-        init = roll_initiative(char.stats.agility)
+        init = roll_initiative(char.stats.agility) + getattr(char, "initiative_bonus", 0)
         entries.append({"type": "player", "uid": uid, "name": char.name, "initiative": init})
         if char.companion and char.companion.alive:
             entries.append({
@@ -223,6 +247,10 @@ def build_initiative_order(
     entries.append({"type": "enemy", "uid": "enemy", "name": mob["name"], "initiative": enemy_init})
 
     entries.sort(key=lambda e: (-e["initiative"], 0 if e["type"] != "enemy" else 1))
+    if mode == "surprise":
+        entries = [e for e in entries if e["type"] != "enemy"] + [e for e in entries if e["type"] == "enemy"]
+    elif mode == "ambush":
+        entries = [e for e in entries if e["type"] == "enemy"] + [e for e in entries if e["type"] != "enemy"]
     return entries
 
 
@@ -256,9 +284,10 @@ def create_raid(
                 "description": mob.attack_secondary.description,
                 "damage_type": mob.attack_secondary.damage_type,
             }
+        hp = generate_enemy_hp({"hp": mob.hp})
         encounters.append(RaidEncounter(
-            enemy_hp=generate_enemy_hp({"hp": mob.hp}),
-            enemy_max_hp=mob.hp,
+            enemy_hp=hp,
+            enemy_max_hp=hp,
             enemy_template={
                 "name": mob.name,
                 "hp": mob.hp,
@@ -304,6 +333,7 @@ def resolve_player_turn(
         is_player_attacker=True, turn_number=enc.turn,
         active_effects=enc.active_effects, nn_modifiers=nn_modifiers,
         attribute=attribute,
+        attacker_key=player_key(character), defender_key=ENEMY_KEY,
     )
     enc.enemy_hp = enemy.hp
     return atk
@@ -315,7 +345,6 @@ def resolve_companion_turn(
     if not character.companion or not character.companion.alive:
         return None
     comp = character.companion
-    owner_stat = character.stats.intelligence
     atk, _ = resolve_turn(
         attacker=comp, defender=enemy,
         is_player_attacker=True, turn_number=enc.turn,
@@ -330,33 +359,36 @@ def resolve_enemy_turn(
     character: Character, enemy: _Enemy, enc: RaidEncounter,
     enemy_nn_modifiers: Optional[list[dict]],
 ) -> AttackResult:
-    """Разрешает ход врага: выбор атаки, применение NN-модификаторов, наложение статусов."""
+    """Разрешает ход врага: выбор атаки, модификаторы NN, наложение статусов."""
     atk_min_saved, atk_max_saved = enemy.attack_min, enemy.attack_max
     atk_min_pick, atk_max_pick, _, atk_damage_type = enemy.pick_attack()
     enemy.attack_min, enemy.attack_max = atk_min_pick, atk_max_pick
+    pkey = player_key(character)
 
-    if enemy_nn_modifiers:
-        from core.combat import BattleState
-        es = BattleState(
+    try:
+        atk, enc.active_effects = resolve_turn(
             attacker=enemy, defender=character,
             is_player_attacker=False, turn_number=enc.turn,
-            active_effects=enc.active_effects,
+            active_effects=enc.active_effects, nn_modifiers=enemy_nn_modifiers,
+            attribute="strength",
+            attacker_key=ENEMY_KEY, defender_key=pkey,
         )
-        apply_enemy_modifiers(es, enemy_nn_modifiers)
-        enc.active_effects = es.active_effects
+    finally:
+        enemy.attack_min, enemy.attack_max = atk_min_saved, atk_max_saved
 
-    atk, enc.active_effects = resolve_turn(
-        attacker=enemy, defender=character,
-        is_player_attacker=False, turn_number=enc.turn,
-        active_effects=enc.active_effects, nn_modifiers=None,
-        attribute="strength",
-    )
-    enemy.attack_min, enemy.attack_max = atk_min_saved, atk_max_saved
+    enc.enemy_hp = enemy.hp  # враг мог умереть от собственного яда/кровотечения
 
     if atk.final_damage > 0 and not atk.is_dodged:
+        resist = character.effect_resist(atk_damage_type) if hasattr(character, "effect_resist") else 0.0
         enc.active_effects = apply_mob_status_effects(
-            enc.active_effects, atk_damage_type, atk.final_damage,
+            enc.active_effects, atk_damage_type, atk.final_damage, target_key=pkey,
+            resist=resist,
         )
+        mad = getattr(enemy, "madness_chance", 0.0)
+        if mad > 0 and hasattr(character, "madness_resist") and not character.madness:
+            if roll_chance(mad * (1 - character.madness_resist)):
+                character.madness = True
+                atk.madness_applied = True
     return atk
 
 
@@ -409,7 +441,6 @@ def generate_loot(
     Редкость определяется весами rarity_weights локации.
     """
     items: list[Item] = []
-    uid_counter = 0
     rarities: list[str] = []
     for r, w in location.drop_rates.rarity_weights.items():
         rarities.extend([r] * w)
@@ -431,9 +462,8 @@ def generate_loot(
             max_level=weapon_max,
         )
         for it in weapon_items:
-            it.uid = f"loot_{uid_counter}"
+            it.uid = new_item_uid("loot")
             items.append(it)
-            uid_counter += 1
     return items
 
 
@@ -442,6 +472,7 @@ DAMAGE_TYPE_EFFECTS: dict[str, tuple[StatusEffect, float]] = {
     "poison": (StatusEffect.POISON, 0.06),
     "fire": (StatusEffect.POISON, 0.08),
     "ice": (StatusEffect.STUNNED, 1.0),
+    "stun": (StatusEffect.STUNNED, 1.0),  # результат decide_status_effect
 }
 
 
@@ -449,25 +480,40 @@ def apply_mob_status_effects(
     active_effects: dict[str, list[StatusEffectInstance]],
     damage_type: str,
     damage_dealt: int,
+    target_key: str = "defender",
+    resist: float = 0.0,
+    power: float = 0.0,
 ) -> dict[str, list[StatusEffectInstance]]:
-    """Накладывает статус-эффект на игрока в зависимости от типа атаки моба.
+    """Накладывает статус-эффект на цель (target_key) по типу урона.
 
     bleed → BLEED (10% урона/ход, 3 хода)
     poison → POISON (6% урона/ход, 3 хода)
     fire → POISON (8% урона/ход, 3 хода)
-    ice → STUNNED (1 ход)
+    ice/stun → STUNNED (1 ход)
+
+    resist — сопротивление цели (снижает урон за тик), power — сила дебаффов
+    накладывающего (повышает урон за тик, оглушение с шансом power длится 2 хода).
+
+    Повторное попадание тем же эффектом не складывается бесконечно,
+    а обновляет длительность и берёт больший урон за тик.
     """
     mapping = DAMAGE_TYPE_EFFECTS.get(damage_type)
     if not mapping or damage_dealt <= 0:
         return active_effects
     effect_kind, multiplier = mapping
-    eff_list = active_effects.setdefault("defender", [])
+    eff_list = active_effects.setdefault(target_key, [])
     if effect_kind == StatusEffect.STUNNED:
-        if not any(e.kind == StatusEffect.STUNNED for e in eff_list):
-            eff_list.append(StatusEffectInstance(StatusEffect.STUNNED, 1))
-    else:
-        dot_dmg = max(1, int(damage_dealt * multiplier))
-        eff_list.append(StatusEffectInstance(effect_kind, 3, float(dot_dmg)))
+        if not any(e.kind in (StatusEffect.STUNNED, StatusEffect.STUN_IMMUNE) for e in eff_list):
+            duration = 2 if power > 0 and roll_chance(min(1.0, power)) else 1
+            eff_list.append(StatusEffectInstance(StatusEffect.STUNNED, duration))
+        return active_effects
+    dot_dmg = float(max(1, int(damage_dealt * multiplier * (1 - resist) * (1 + power))))
+    for e in eff_list:
+        if e.kind == effect_kind:
+            e.duration = max(e.duration, 3)
+            e.value = max(e.value, dot_dmg)
+            return active_effects
+    eff_list.append(StatusEffectInstance(effect_kind, 3, dot_dmg))
     return active_effects
 
 

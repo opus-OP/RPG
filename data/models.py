@@ -168,6 +168,8 @@ def character_to_dict(char: Character) -> dict:
         "companion_description": char.companion_description,
         "last_raid_time": char.last_raid_time,
         "count_raid": char.count_raid,
+        "artifacts": list(char.artifacts),
+        "madness": char.madness,
     }
 
 
@@ -193,8 +195,8 @@ def character_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Chara
         gold=data.get("gold", 0),
         equipment=equipment_from_dict(data.get("equipment", {}), templates),
         inventory=[
-            item_from_dict(i, templates) for i in data.get("inventory", [])
-            if item_from_dict(i, templates) is not None
+            it for it in (item_from_dict(i, templates) for i in data.get("inventory", []))
+            if it is not None
         ],
         in_raid=data.get("in_raid", False),
         alive=data.get("alive", True),
@@ -203,5 +205,22 @@ def character_from_dict(data: dict, templates: dict[str, ItemTemplate]) -> Chara
         companion_description=data.get("companion_description", ""),
         last_raid_time=data.get("last_raid_time", 0.0),
         count_raid=data.get("count_raid", 0),
+        artifacts=list(data.get("artifacts", [])),
+        madness=bool(data.get("madness", False)),
     )
+    # max_hp — производная величина (бонусы предметов могли измениться)
+    char.max_hp = char._calc_max_hp()
+    char.hp = min(char.hp, char.max_hp)
+    _dedupe_item_uids(char)
     return char
+
+
+def _dedupe_item_uids(char: Character) -> None:
+    """Старые сохранения содержат предметы с одинаковым uid (loot_0, wpn_0 ...),
+    из-за чего надеть/продать можно было не тот предмет. Выдаём новые uid дубликатам."""
+    from core.items import new_item_uid
+    seen: set[str] = set()
+    for item in char.equipment.equipped_items() + char.inventory:
+        if item.uid in seen:
+            item.uid = new_item_uid("fix")
+        seen.add(item.uid)

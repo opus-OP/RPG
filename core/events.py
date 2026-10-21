@@ -73,7 +73,7 @@ def apply_event_reward(
         parts.append(f"{reward.gold}💰")
     if reward.heal:
         old_hp = char.hp
-        char.hp = min(char.max_hp, char.hp + reward.heal)
+        char.hp = min(char.max_hp, char.hp + int(reward.heal * getattr(char, "heal_mult", 1.0)))
         parts.append(f"+{char.hp - old_hp}❤️")
     if reward.damage:
         char.hp = max(0, char.hp - reward.damage)

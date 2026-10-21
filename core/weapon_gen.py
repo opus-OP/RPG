@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from core.items import Item, ItemTemplate, ItemEffect, ItemType, Rarity
+from core.items import Item, ItemTemplate, ItemEffect, ItemType, Rarity, new_item_uid
 from utils.rng import secure_randint
 
 WEAPON_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "weapons.json"
@@ -129,13 +129,11 @@ def generate_loot_weapons(
         return []
 
     items: list[Item] = []
-    uid_counter = 0
     for _ in range(num_rolls):
         pattern = patterns[secure_randint(0, len(patterns) - 1)]
-        item = roll_weapon_from_pattern(pattern, f"wpn_{uid_counter}")
+        item = roll_weapon_from_pattern(pattern, new_item_uid("wpn"))
         if item:
             items.append(item)
-            uid_counter += 1
     return items
 
 

@@ -19,6 +19,7 @@ def main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🗺 Локации", callback_data="location"),
          InlineKeyboardButton("🏪 Рынок", callback_data="market")],
         [InlineKeyboardButton("📜 Мои персонажи", callback_data="char_list")],
+        [InlineKeyboardButton("🎃 Ивент-кампания", callback_data="cmp_menu")],
     ])
 
 

@@ -7,7 +7,13 @@ Item — конкретный экземпляр с UID, износом и со�
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
+import uuid
 from typing import Optional
+
+
+def new_item_uid(prefix: str = "it") -> str:
+    """Уникальный uid предмета (раньше uid повторялись: loot_0, wpn_0 ...)."""
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
 class Rarity(Enum):

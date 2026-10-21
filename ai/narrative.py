@@ -164,6 +164,8 @@ async def decide_status_effect(
             log.warning("NN API timeout (effect, attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
         except httpx.RequestError as e:
             log.warning("NN API error (effect): %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
+        except ValueError as e:
+            log.warning("NN API bad body (effect): %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
 
     return "none"
 
@@ -292,9 +294,17 @@ async def call_narrative_api(
                 log.warning("NN response not JSON (attempt %d/%d): %.200s", attempt, config.NN_MAX_RETRIES, content)
                 continue
 
+            if not isinstance(parsed, dict):
+                log.warning("NN response is not a JSON object (attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
+                continue
+
             if key in ("actions", "enemy_actions"):
                 raw_list = parsed.get(key, [])
-                validated = validate_nn_response({"actions": raw_list}, key=key, check_narrative=False)
+                try:
+                    validated = validate_nn_response({"actions": raw_list}, key="actions", check_narrative=False)
+                except ValueError as e:
+                    log.warning("NN response invalid: %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
+                    continue
                 result = {key: validated}
                 if mode == "player_modifiers" and "attribute" in parsed:
                     attr = parsed["attribute"]
@@ -303,12 +313,16 @@ async def call_narrative_api(
                 return result
             else:
                 text_val = parsed.get(key, "")
-                return {key: text_val}
+                if not isinstance(text_val, str):
+                    text_val = ""
+                return {key: text_val.strip()[:1500]}
 
         except httpx.TimeoutException:
             log.warning("NN API timeout (attempt %d/%d)", attempt, config.NN_MAX_RETRIES)
         except httpx.RequestError as e:
             log.warning("NN API error: %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
+        except ValueError as e:  # resp.json() на не-JSON ответе
+            log.warning("NN API bad body: %s (attempt %d/%d)", e, attempt, config.NN_MAX_RETRIES)
 
     log.error("NN API failed after %d attempts", config.NN_MAX_RETRIES)
     return None

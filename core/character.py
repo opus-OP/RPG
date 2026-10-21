@@ -5,6 +5,7 @@ from typing import Optional
 
 from core.classes import ClassTemplate, StatBlock, CLASSES
 from core.items import Item, ItemEffect, ItemType
+from core.artifacts import ARTIFACTS, MAX_ARTIFACTS
 from config import (
     LEVEL_CURVE, MAX_LEVEL, CRIT_CHANCE_MAX, DODGE_MAX, CRIT_MULTIPLIER_BASE,
 )
@@ -63,15 +64,21 @@ class Character:
     companion_description: str = ""
     last_raid_time: float = 0.0
     count_raid: int = 0
+    artifacts: list[str] = field(default_factory=list)  # ключи из core.artifacts.ARTIFACTS
+    madness: bool = False                               # безумие кампании (до её конца)
 
     def __post_init__(self):
         self._buff_atk = 0
         self._buff_def = 0
         if self.base_stats.strength == 0 and self.base_stats.agility == 0 and self.base_stats.intelligence == 0:
-            self.base_stats = self.template.base_stats
-        if self.max_hp == 0:
+            tb = self.template.base_stats
+            # копия, иначе распределение очков меняло бы шаблон класса для всех
+            self.base_stats = StatBlock(tb.strength, tb.agility, tb.intelligence)
+        fresh = self.max_hp == 0
+        if fresh:
             self.max_hp = self._calc_max_hp()
-        if self.hp <= 0 or self.hp > self.max_hp:
+        # новый персонаж стартует с полным HP; у загруженного погибшего hp=0 сохраняется
+        if fresh or self.hp > self.max_hp:
             self.hp = self.max_hp
 
     def set_buffs(self, atk: int = 0, def_: int = 0):
@@ -91,7 +98,85 @@ class Character:
         return self.base_stats + self._item_stats()
 
     def _calc_max_hp(self) -> int:
-        return 50 + self.stats.strength * 12
+        base = 50 + self.stats.strength * 12 + int(self._item_stat("hp_bonus"))
+        return max(1, int(round(base * (1 + self._art("max_hp_pct")))))
+
+    # ── артефакты ─────────────────────────────────────────────
+    def _art(self, attr: str) -> float:
+        return sum(getattr(ARTIFACTS[k], attr) for k in self.artifacts if k in ARTIFACTS)
+
+    def add_artifact(self, key: str) -> bool:
+        """Добавляет артефакт, если есть свободный слот и такого ещё нет."""
+        if key not in ARTIFACTS or key in self.artifacts or len(self.artifacts) >= MAX_ARTIFACTS:
+            return False
+        old_max = self.max_hp
+        self.artifacts.append(key)
+        self.max_hp = self._calc_max_hp()
+        self.hp = max(1, min(self.max_hp, self.hp + (self.max_hp - old_max))) if self.hp > 0 else 0
+        return True
+
+    def replace_artifact(self, old_key: str, new_key: str) -> bool:
+        if old_key not in self.artifacts or new_key not in ARTIFACTS or new_key in self.artifacts:
+            return False
+        old_max = self.max_hp
+        self.artifacts[self.artifacts.index(old_key)] = new_key
+        self.max_hp = self._calc_max_hp()
+        self.hp = max(1, min(self.max_hp, self.hp + (self.max_hp - old_max))) if self.hp > 0 else 0
+        return True
+
+    @property
+    def accuracy(self) -> float:
+        return self._art("accuracy")
+
+    @property
+    def incoming_damage_mult(self) -> float:
+        return max(0.1, 1 + self._art("dmg_taken"))
+
+    @property
+    def heal_mult(self) -> float:
+        return max(0.1, 1 + self._art("heal_in"))
+
+    @property
+    def initiative_bonus(self) -> int:
+        return int(self._art("initiative"))
+
+    @property
+    def debuff_power(self) -> float:
+        return max(0.0, self._art("debuff_power"))
+
+    @property
+    def surprise_chance(self) -> float:
+        return min(0.95, max(0.0, self._art("surprise_chance")))
+
+    @property
+    def scout_chance(self) -> float:
+        return min(0.95, max(0.0, self._art("scout_chance")))
+
+    @property
+    def priority_target(self) -> bool:
+        return any(ARTIFACTS[k].priority_target for k in self.artifacts if k in ARTIFACTS)
+
+    @property
+    def madness_resist(self) -> float:
+        return max(-1.0, min(0.9, self._art("madness_res")))
+
+    def damage_mult_for(self, attribute: str) -> float:
+        """Множитель урона от артефактов: Сила — ближний бой, Ловкость — дальний."""
+        if attribute == "strength":
+            return max(0.1, 1 + self._art("melee_dmg"))
+        if attribute == "agility":
+            return max(0.1, 1 + self._art("ranged_dmg"))
+        return 1.0
+
+    def effect_resist(self, damage_type: str) -> float:
+        """Сопротивление периодическому урону по типу атаки врага (может быть отрицательным)."""
+        if damage_type == "bleed":
+            res = self._art("bleed_res")
+        elif damage_type in ("poison", "fire"):
+            res = self._art("poison_res")
+        else:
+            res = 0.0
+        return max(-1.0, min(0.9, res))
 
     @property
     def attack_min(self) -> int:
@@ -127,7 +212,7 @@ class Character:
     def dodge_chance(self) -> float:
         s = self.stats
         item_bonus = self._item_stat("dodge_bonus")
-        return min(s.agility * 0.02 + item_bonus, DODGE_MAX)
+        return max(0.0, min(s.agility * 0.02 + item_bonus + self._art("dodge"), DODGE_MAX))
 
     @property
     def max_hp_prop(self) -> int:
@@ -182,7 +267,7 @@ class Character:
             leveled = True
         if not leveled:
             self.max_hp = self._calc_max_hp()
-            self.hp = self.max_hp
+            self.hp = min(self.hp, self.max_hp)
         return leveled
 
     def can_equip(self, item: Item) -> bool:
@@ -233,23 +318,32 @@ class Character:
         return raw_damage
 
     def heal(self, amount: int) -> int:
+        """Лечение с учётом артефактов (получаемое лечение может быть больше или меньше)."""
         before = self.hp
-        self.hp = min(self.max_hp, self.hp + amount)
+        self.hp = min(self.max_hp, self.hp + max(0, int(amount * self.heal_mult)))
         return self.hp - before
 
     def revive(self):
         self.hp = 1
         self.alive = True
 
+    def _cooldown_active(self) -> bool:
+        """Кулдаун действует после каждого 3-го рейда (3, 6, 9 ...)."""
+        return (
+            self.last_raid_time != 0
+            and self.count_raid > 0
+            and self.count_raid % 3 == 0
+        )
+
     def can_raid(self) -> bool:
-        if self.last_raid_time == 0 or self.count_raid % 3 != 0:
+        if not self._cooldown_active():
             return True
         from config import RAID_COOLDOWN_HOURS
         elapsed = time.time() - self.last_raid_time
         return elapsed >= RAID_COOLDOWN_HOURS * 3600
 
     def raid_cooldown_remaining(self) -> float:
-        if self.last_raid_time == 0 or self.count_raid % 3 != 0:
+        if not self._cooldown_active():
             return 0.0
         from config import RAID_COOLDOWN_HOURS
         elapsed = time.time() - self.last_raid_time
@@ -257,7 +351,16 @@ class Character:
         return max(0.0, remaining)
 
     def mark_raid_done(self):
+        """Фиксирует завершённый рейд (победа, поражение или побег)."""
+        self.count_raid += 1
         self.last_raid_time = time.time()
+
+    def restore_after_raid(self):
+        """Конец рейда: персонаж снова жив, здоров и вне рейда (смерти не навсегда)."""
+        self.in_raid = False
+        self.alive = True
+        self.hp = self.max_hp
+        self.release_companion()
 
     def summon_companion(self):
         if self.class_key != "leader":
