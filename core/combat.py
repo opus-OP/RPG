@@ -46,6 +46,7 @@ class AttackResult:
     status_applied: Optional[StatusEffect] = None
     attribute: str = ""
     madness_applied: bool = False
+    effect_resisted: str = ""   # яд/кровь не наложились из-за сопротивления
 
 
 def calc_damage(

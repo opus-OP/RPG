@@ -99,9 +99,16 @@ def test_pill_and_tooth_modify_healing():
 
 
 def test_bleed_and_poison_resistance_scale_dot():
-    dot = lambda res, t: apply_mob_status_effects({}, t, 100, "p1", resist=res)["p1"][0].value
-    assert dot(0.5, "bleed") == pytest.approx(dot(0.0, "bleed") / 2, abs=1)
-    assert dot(-0.2, "bleed") > dot(0.0, "bleed")
+    def applied(res, t, n=2000):
+        return sum(bool(apply_mob_status_effects({}, t, 100, "p1", resist=res).get("p1")) for _ in range(n)) / n
+    assert applied(None, "bleed", 50) == 1.0                       # у врагов сопротивления нет
+    assert applied(0.0, "bleed") == pytest.approx(0.70, abs=0.05)  # база 70%
+    assert applied(0.5, "bleed") == pytest.approx(0.20, abs=0.05)  # 70% − 50%
+    assert applied(-0.2, "poison") == pytest.approx(0.90, abs=0.05)
+    assert applied(0.9, "bleed") == 0.0
+    # яд — 8% макс. HP цели, кровь — 35% урона удара
+    assert apply_mob_status_effects({}, "poison", 10, "p", target_max_hp=200)["p"][0].value == 16
+    assert apply_mob_status_effects({}, "bleed", 40, "p", resist=0.0 if False else None)["p"][0].value == 14
     c = _warrior(); c.add_artifact("vampire_tooth"); c.add_artifact("star_ointment")
     assert c.effect_resist("bleed") == 0.5 and c.effect_resist("poison") == 0.5
     k = _warrior(); k.add_artifact("swiss_knife")

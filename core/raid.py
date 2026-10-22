@@ -380,10 +380,16 @@ def resolve_enemy_turn(
 
     if atk.final_damage > 0 and not atk.is_dodged:
         resist = character.effect_resist(atk_damage_type) if hasattr(character, "effect_resist") else 0.0
+        before = len(enc.active_effects.get(pkey, []))
         enc.active_effects = apply_mob_status_effects(
             enc.active_effects, atk_damage_type, atk.final_damage, target_key=pkey,
-            resist=resist,
+            resist=resist, target_max_hp=character.max_hp,
         )
+        if (atk_damage_type in ("bleed", "poison", "fire")
+                and len(enc.active_effects.get(pkey, [])) == before
+                and not any(e.kind == StatusEffect.POISON if atk_damage_type != "bleed" else e.kind == StatusEffect.BLEED
+                            for e in enc.active_effects.get(pkey, []))):
+            atk.effect_resisted = atk_damage_type
         mad = getattr(enemy, "madness_chance", 0.0)
         if mad > 0 and hasattr(character, "madness_resist") and not character.madness:
             if roll_chance(mad * (1 - character.madness_resist)):
@@ -467,8 +473,11 @@ def generate_loot(
     return items
 
 
+EFFECT_BASE_CHANCE = 0.70        # базовый шанс наложить яд/кровотечение на героя (минус его сопротивление)
+POISON_MAX_HP_FRACTION = 0.08    # яд: доля макс. HP цели за ход
+
 DAMAGE_TYPE_EFFECTS: dict[str, tuple[StatusEffect, float]] = {
-    "bleed": (StatusEffect.BLEED, 0.10),
+    "bleed": (StatusEffect.BLEED, 0.35),   # 35% урона удара за ход
     "poison": (StatusEffect.POISON, 0.06),
     "fire": (StatusEffect.POISON, 0.08),
     "ice": (StatusEffect.STUNNED, 1.0),
@@ -481,18 +490,19 @@ def apply_mob_status_effects(
     damage_type: str,
     damage_dealt: int,
     target_key: str = "defender",
-    resist: float = 0.0,
+    resist: Optional[float] = None,
     power: float = 0.0,
+    target_max_hp: int = 0,
 ) -> dict[str, list[StatusEffectInstance]]:
     """Накладывает статус-эффект на цель (target_key) по типу урона.
 
-    bleed → BLEED (10% урона/ход, 3 хода)
-    poison → POISON (6% урона/ход, 3 хода)
-    fire → POISON (8% урона/ход, 3 хода)
+    bleed → BLEED (35% урона удара/ход, 3 хода)
+    poison/fire → POISON (8% макс. HP цели/ход, если известно target_max_hp, иначе 6%/8% урона удара; 3 хода)
     ice/stun → STUNNED (1 ход)
 
-    resist — сопротивление цели (снижает урон за тик), power — сила дебаффов
-    накладывающего (повышает урон за тик, оглушение с шансом power длится 2 хода).
+    resist — сопротивление цели (None — у цели его нет, эффект ложится всегда).
+    Для яда/крови шанс наложения = 70% − resist (минус сопротивление шанс повышает), при
+    провале эффект не накладывается. power — сила дебаффов накладывающего.
 
     Повторное попадание тем же эффектом не складывается бесконечно,
     а обновляет длительность и берёт больший урон за тик.
@@ -501,13 +511,20 @@ def apply_mob_status_effects(
     if not mapping or damage_dealt <= 0:
         return active_effects
     effect_kind, multiplier = mapping
+    if resist is not None and effect_kind in (StatusEffect.BLEED, StatusEffect.POISON):
+        if not roll_chance(max(0.0, min(1.0, EFFECT_BASE_CHANCE - resist))):
+            return active_effects
     eff_list = active_effects.setdefault(target_key, [])
     if effect_kind == StatusEffect.STUNNED:
         if not any(e.kind in (StatusEffect.STUNNED, StatusEffect.STUN_IMMUNE) for e in eff_list):
             duration = 2 if power > 0 and roll_chance(min(1.0, power)) else 1
             eff_list.append(StatusEffectInstance(StatusEffect.STUNNED, duration))
         return active_effects
-    dot_dmg = float(max(1, int(damage_dealt * multiplier * (1 - resist) * (1 + power))))
+    if effect_kind == StatusEffect.POISON and target_max_hp > 0:
+        base = target_max_hp * POISON_MAX_HP_FRACTION
+    else:
+        base = damage_dealt * multiplier
+    dot_dmg = float(max(1, int(base * (1 + power))))
     for e in eff_list:
         if e.kind == effect_kind:
             e.duration = max(e.duration, 3)

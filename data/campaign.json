@@ -500,8 +500,8 @@
    ],
    "boss": "old_witch",
    "start_level": 1,
-   "hp_mult": 1.0,
-   "atk_mult": 1.0,
+   "hp_mult": 0.77,
+   "atk_mult": 0.77,
    "chest_candy": [
     20,
     30
@@ -570,8 +570,8 @@
    ],
    "boss": "zombie_boar",
    "start_level": 1,
-   "hp_mult": 0.85,
-   "atk_mult": 0.85,
+   "hp_mult": 0.9,
+   "atk_mult": 0.9,
    "chest_candy": [
     20,
     30
@@ -640,8 +640,8 @@
    ],
    "boss": "great_necromancer",
    "start_level": 3,
-   "hp_mult": 1.05,
-   "atk_mult": 1.05,
+   "hp_mult": 0.79,
+   "atk_mult": 0.79,
    "chest_candy": [
     25,
     35
@@ -705,8 +705,8 @@
    ],
    "boss": "dracula",
    "start_level": 5,
-   "hp_mult": 1.1,
-   "atk_mult": 1.1,
+   "hp_mult": 1.02,
+   "atk_mult": 1.02,
    "chest_candy": [
     30,
     40
@@ -766,8 +766,8 @@
    ],
    "boss": "cult_deity",
    "start_level": 7,
-   "hp_mult": 1.15,
-   "atk_mult": 1.15,
+   "hp_mult": 0.86,
+   "atk_mult": 0.86,
    "chest_candy": [
     35,
     50
@@ -831,8 +831,8 @@
    ],
    "boss": "grand_master",
    "start_level": 7,
-   "hp_mult": 1.3,
-   "atk_mult": 1.3,
+   "hp_mult": 1.28,
+   "atk_mult": 1.28,
    "chest_candy": [
     35,
     50
@@ -896,8 +896,8 @@
    ],
    "boss": "madness_flesh",
    "start_level": 7,
-   "hp_mult": 1.1,
-   "atk_mult": 1.1,
+   "hp_mult": 0.83,
+   "atk_mult": 0.83,
    "chest_candy": [
     35,
     50

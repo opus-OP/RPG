@@ -649,25 +649,32 @@ def _is_group(session: RaidSession) -> bool:
 
 
 async def _resolve_pending(update, context, session: RaidSession, text: str, *, go: bool = True):
-    """Закрывает комнату: правит нажатое сообщение, рассылает итог остальным (в ЛС), даёт «Дальше»."""
+    """Закрывает комнату: итог и кнопка «Дальше» — в том же сообщении (меньше сообщений, меньше флуда).
+
+    Если сообщение отредактировать не удалось, итог отправляется отдельно, а не теряется.
+    """
     query = update.callback_query
-    session.campaign["pending"] = None
+    camp = session.campaign
+    camp["pending"] = None
+    chars = await H._get_participant_chars(context, session)
+    full = text + await _scout_next(session, chars)
+    await H._save_session(context, session)
+    kb = kb_go(camp["room_idx"])
     try:
-        await query.edit_message_text(text)
-    except Exception:
-        log.debug("edit_message_text не удался", exc_info=True)
-    if not _is_group(session):
-        uid = update.effective_user.id
-        for puid in H._participants(session):
-            if puid != uid:
-                try:
-                    await context.bot.send_message(puid, text)
-                except Exception:
-                    log.debug("не удалось отправить итог игроку %s", puid, exc_info=True)
-    if go:
-        await _send_go(context, session, "Отряд готов идти дальше.")
-    else:
-        await H._save_session(context, session)
+        await query.edit_message_text(full, reply_markup=kb)
+        recipients = [] if _is_group(session) else [u for u in H._participants(session) if u != update.effective_user.id]
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            recipients = []
+        else:
+            log.warning("Не удалось отредактировать сообщение комнаты, шлю отдельно", exc_info=True)
+            await H._notify_participants(context, session, full, kb)
+            return
+    for puid in recipients:
+        try:
+            await context.bot.send_message(puid, full, reply_markup=kb)
+        except Exception:
+            log.debug("не удалось отправить итог игроку %s", puid, exc_info=True)
 
 
 @H._auth_cb
@@ -693,13 +700,13 @@ async def cb_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
             n = chest_candies(loc)
             camp["candies"][str(uid)] = camp["candies"].get(str(uid), 0) + n
             camp["chests_opened"] = camp.get("chests_opened", 0) + 1
-            text = f"📦 {hero.name} открывает сундук: сокровище! +{n}🍬"
+            text = f"📦 {hero.name} открывает сундук…\n\n💰 СОКРОВИЩЕ! +{n}🍬"
         elif kind == "trap":
             dmg = nonlethal_damage(hero, 0.15 + 0.02 * loc.tier)
             await H._save_char(hero)
-            text = f"💥 {hero.name} открывает сундук — ловушка! −{dmg}❤️ ({hero.hp}/{hero.max_hp})"
+            text = f"📦 {hero.name} открывает сундук…\n\n💥 ЛОВУШКА! −{dmg}❤️ (осталось {hero.hp}/{hero.max_hp})"
         else:
-            text = f"📦 {hero.name} открывает сундук — внутри пусто."
+            text = f"📦 {hero.name} открывает сундук…\n\n🕸 ПУСТО. Внутри только пыль."
         await _resolve_pending(update, context, session, text)
 
 

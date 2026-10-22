@@ -136,7 +136,7 @@ class TestStatusEffects:
             {}, "bleed", 100, target_key=ENEMY_KEY)
         hp0 = hero.hp
         resolve_enemy_turn(hero, enemy, enc, None)
-        assert enc.enemy_hp == 1000 - 10   # кровотечение тикнуло по врагу в его ход
+        assert enc.enemy_hp == 1000 - 35   # кровотечение тикнуло по врагу в его ход
         # игрок получил лишь удар врага (не больше 13), а не удар + кровотечение (≥16)
         assert hp0 - hero.hp <= 13
 

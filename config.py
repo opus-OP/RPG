@@ -96,7 +96,7 @@ CANDY_REWARD_CHAT_ID = int(_candy_chat) if _candy_chat else None  # None = ча�
 CAMPAIGN_MADNESS_ACTION_CHANCE = 0.25  # шанс безумного героя действовать вопреки воле игрока
 CAMPAIGN_FALLEN_BOSS_SHARE = 1.0       # доля награды за босса для павших героев (1.0 = полная)
 CAMPAIGN_PARTY_HP_SCALE = 1.0          # +HP врагов за каждого игрока сверх первого
-CAMPAIGN_PARTY_ATK_SCALE = 0.55        # +урон врагов за каждого игрока сверх первого
+CAMPAIGN_PARTY_ATK_SCALE = 0.7         # +урон врагов за каждого игрока сверх первого
 CAMPAIGN_AMBUSH_CHANCE = 0.15          # шанс засады в боевой комнате
 CAMPAIGN_PRIORITY_TARGET_CHANCE = 0.65 # шанс, что враг выберет носителя «Амулета-метки»
 

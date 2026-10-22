@@ -634,6 +634,7 @@ _RAID_KEYS = (
 _raid_locks: dict[str, asyncio.Lock] = {}
 _bg_tasks: set = set()
 
+_EFFECT_NAMES = {"bleed": "кровотечение", "poison": "яд", "fire": "горение"}
 _EFFECT_LABELS = {"bleed": "🩸 кровотечение", "poison": "☠️ яд", "stun": "💫 оглушение"}
 
 
@@ -1169,6 +1170,10 @@ async def _resolve_auto_turn(
     desc = _attack_desc(f"👾 {entry['name']}", atk, "наносит")
     if desc:
         parts.append(f"{desc} → {target_char.name}")
+    if atk and getattr(atk, "effect_resisted", ""):
+        parts.append(f"🛡 {target_char.name} сопротивляется эффекту ({_EFFECT_NAMES.get(atk.effect_resisted, atk.effect_resisted)})")
+    if getattr(atk, "madness_applied", False):
+        parts.append(f"🌀 {target_char.name} теряет рассудок!")
     if enc.finished:
         parts.append(f"☠️ {enc.enemy_template['name']} погибает от ран!")
     if died:
